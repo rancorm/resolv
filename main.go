@@ -233,8 +233,9 @@ func main() {
 			rtt.Milliseconds(),
 			cat.Rating)
 
+		// Exit with Rcode as code (scripts?)
 		if result.Rcode != dns.RcodeSuccess {
-			return
+			os.Exit(result.Rcode)
 		}
 
 		// Output records
