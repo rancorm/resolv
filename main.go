@@ -59,10 +59,53 @@ func handleA(result *dns.Msg) {
 	}
 }
 
+func exchangeSOA(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	msg := new(dns.Msg)
+	msg.SetQuestion(domain, dns.TypeSOA)
+
+	return client.Exchange(msg, server)
+}
+
+func handleSOA(result *dns.Msg) {
+	for _, ans := range result.Answer {
+		if soa, ok := ans.(*dns.SOA); ok {
+			fmt.Printf("%s ttl=%d ser=%d ref=%d ret=%d min=%d %s\n",
+				removeLastDot(soa.Ns),
+				soa.Hdr.Ttl,
+				soa.Serial,
+				soa.Refresh,
+				soa.Retry,
+				soa.Minttl,
+				mboxToEmail(soa.Mbox))
+		}
+	}
+}
+
+
 var recordMap = map[string]Record {
 	"mx": { Exchange: exchangeMX, Handler: handleMX },
 	"mail": { Exchange: exchangeMX, Handler: handleMX },
 	"a": { Exchange: exchangeA, Handler: handleA },
+	"soa": { Exchange: exchangeSOA, Handler: handleSOA },
+	"origin": { Exchange: exchangeSOA, Handler: handleSOA },
+}
+
+func mboxToEmail(mbox string) string {
+	email := removeLastDot(mbox)
+	atIndex := 1
+
+	for i, c := range email {
+		if c == '.' {
+			atIndex = i
+			break
+		}
+	}
+
+	if atIndex != -1 {
+		return email[:atIndex] + "@" + email[atIndex + 1:]
+	}
+
+	return email
 }
 
 func removeLastDot(domain string) string {
@@ -133,10 +176,11 @@ func main() {
 		cat := rateRTT(rtt)
 		numAnswers := len(result.Answer)
 
-		fmt.Printf("rtt: %dms [%s], code: %d\n",
+		fmt.Printf("code=%d num=%d rtt=%dms [%s]\n",
+			result.Rcode,
+			numAnswers,
 			rtt.Milliseconds(),
-			cat.Rating,
-			result.Rcode)
+			cat.Rating)
 
 		if result.Rcode != dns.RcodeSuccess {
 			return
@@ -144,7 +188,7 @@ func main() {
 
 		// Output records
 		if numAnswers > 0 {
-			fmt.Printf("num: %d\n-\n", numAnswers)
+			fmt.Printf("-\n")
 			record.Handler(result)
 		}
 	} else {
