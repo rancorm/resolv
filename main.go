@@ -25,8 +25,41 @@ type RTTCategory struct {
 
 const (
 	resolvConfPath = "/etc/resolv.conf"
-	defaultRecordType = "mx"
+	defaultRecordType = "a"
 )
+
+func exchangeSIP(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	msg := new(dns.Msg)
+	msg.SetQuestion("_sip._tcp." + domain, dns.TypeSRV)
+
+	return client.Exchange(msg, server)
+}
+
+func exchangeSRV(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	msg := new(dns.Msg)
+	msg.SetQuestion(domain, dns.TypeSRV)
+
+	return client.Exchange(msg, server)
+}
+
+func handleSRV(result *dns.Msg) {
+	for _, ans := range result.Answer {
+		switch rr := ans.(type) {
+		case *dns.SRV:
+			fmt.Printf("%s ttl=%d p=%d w=%d port=%d\n",
+				removeLastDot(rr.Target),
+				rr.Hdr.Ttl,
+				rr.Priority,
+				rr.Weight,
+				rr.Port)
+		case *dns.CNAME:
+			fmt.Printf("%s > %s ttl=%d\n",
+				removeLastDot(rr.Hdr.Name),
+				removeLastDot(rr.Target),
+				rr.Hdr.Ttl)
+		}
+	}
+}
 
 func exchangeMX(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
 	msg := new(dns.Msg)
@@ -59,6 +92,21 @@ func handleA(result *dns.Msg) {
 	}
 }
 
+func exchangeAAAA(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	msg := new(dns.Msg)
+	msg.SetQuestion(domain, dns.TypeAAAA)
+
+	return client.Exchange(msg, server)
+}
+
+func handleAAAA(result *dns.Msg) {
+	for _, ans := range result.Answer {
+		if aaaa, ok := ans.(*dns.AAAA); ok {
+			fmt.Printf("%s\n", aaaa.AAAA.String())
+		}
+	}
+}
+
 func exchangeSOA(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
 	msg := new(dns.Msg)
 	msg.SetQuestion(domain, dns.TypeSOA)
@@ -86,8 +134,11 @@ var recordMap = map[string]Record {
 	"mx": { Exchange: exchangeMX, Handler: handleMX },
 	"mail": { Exchange: exchangeMX, Handler: handleMX },
 	"a": { Exchange: exchangeA, Handler: handleA },
+	"aaaa": { Exchange: exchangeAAAA, Handler: handleAAAA },
 	"soa": { Exchange: exchangeSOA, Handler: handleSOA },
 	"origin": { Exchange: exchangeSOA, Handler: handleSOA },
+	"srv": { Exchange: exchangeSRV, Handler: handleSRV },
+	"sip": { Exchange: exchangeSIP, Handler: handleSRV },
 }
 
 func mboxToEmail(mbox string) string {
