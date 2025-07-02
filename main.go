@@ -7,7 +7,8 @@ import (
 	"path/filepath"
 	"time"
 	"flag"
-	
+	"strings"
+
 	"github.com/miekg/dns"
 )
 
@@ -17,6 +18,7 @@ type HandlerFunc func(client *dns.Client, result *dns.Msg, server string)
 type Record struct {
 	Exchange ExchangeFunc
 	Handler HandlerFunc
+	Alias string
 }
 
 type RTTCategory struct {
@@ -26,31 +28,33 @@ type RTTCategory struct {
 
 const (
 	resolvConfPath = "/etc/resolv.conf"
-	defaultRecordType = "a"
+	defaultRecordType = "A"
 )
 
 var (
-	recursiveCNAME bool
+	recursionLookup bool
 )
 
-func exchangeDMARC(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+func makeMsg(domain string, what uint16) *dns.Msg {
 	msg := new(dns.Msg)
-	msg.SetQuestion("_dmarc." + domain, dns.TypeTXT)
+	msg.SetQuestion(domain, what)
+	msg.RecursionDesired = recursionLookup
 
+	return msg
+}
+
+func exchangeDMARC(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	msg := makeMsg("_dmarc." + domain, dns.TypeTXT)
 	return client.Exchange(msg, server)
 }
 
 func exchangeSIP(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := new(dns.Msg)
-	msg.SetQuestion("_sip._tcp." + domain, dns.TypeSRV)
-
+	msg := makeMsg("_sip._tcp." + domain, dns.TypeSRV)
 	return client.Exchange(msg, server)
 }
 
 func exchangeSRV(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := new(dns.Msg)
-	msg.SetQuestion(domain, dns.TypeSRV)
-
+	msg := makeMsg(domain, dns.TypeSRV)
 	return client.Exchange(msg, server)
 }
 
@@ -71,9 +75,7 @@ func handleSRV(client *dns.Client, result *dns.Msg, server string) {
 }
 
 func exchangeMX(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := new(dns.Msg)
-	msg.SetQuestion(domain, dns.TypeMX)
-
+	msg := makeMsg(domain, dns.TypeMX)
 	return client.Exchange(msg, server)
 }
 
@@ -88,9 +90,7 @@ func handleMX(client *dns.Client, result *dns.Msg, server string) {
 }
 
 func exchangeA(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := new(dns.Msg)
-	msg.SetQuestion(domain, dns.TypeA)
-
+	msg := makeMsg(domain, dns.TypeA)
 	return client.Exchange(msg, server)
 }
 
@@ -105,9 +105,7 @@ func handleA(client *dns.Client, result *dns.Msg, server string) {
 }
 
 func exchangeAAAA(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := new(dns.Msg)
-	msg.SetQuestion(domain, dns.TypeAAAA)
-
+	msg := makeMsg(domain, dns.TypeAAAA)
 	return client.Exchange(msg, server)
 }
 
@@ -122,9 +120,7 @@ func handleAAAA(client *dns.Client, result *dns.Msg, server string) {
 }
 
 func exchangeSOA(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := new(dns.Msg)
-	msg.SetQuestion(domain, dns.TypeSOA)
-
+	msg := makeMsg(domain, dns.TypeSOA)
 	return client.Exchange(msg, server)
 }
 
@@ -144,9 +140,7 @@ func handleSOA(client *dns.Client, result *dns.Msg, server string) {
 }
 
 func exchangeCNAME(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := new(dns.Msg)
-	msg.SetQuestion(domain, dns.TypeCNAME)
-
+	msg := makeMsg(domain, dns.TypeCNAME)
 	return client.Exchange(msg, server)
 }
 
@@ -157,28 +151,12 @@ func handleCNAME(client *dns.Client, result *dns.Msg, server string) {
 				removeLastDot(cname.Hdr.Name),
 				removeLastDot(cname.Target),
 				cname.Hdr.Ttl)
-			
-			if recursiveCNAME {
-				a, rtt, _ := exchangeA(client, cname.Target, server)
-				num := len(a.Answer)
-				cat := rateRTT(rtt)
-
-				fmt.Printf("code=%d num=%d rtt=%dms [%s]\n-\n",
-					result.Rcode,
-					num,
-					rtt.Milliseconds(),
-					cat.Rating)
-				
-				handleA(client, a, server)
-			}
 		}
 	}
 }
 
 func exchangeTXT(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := new(dns.Msg)
-	msg.SetQuestion(domain, dns.TypeTXT)
-
+	msg := makeMsg(domain, dns.TypeTXT)
 	return client.Exchange(msg, server)
 }
 
@@ -196,18 +174,34 @@ func handleTXT(client *dns.Client, result *dns.Msg, server string) {
 	}
 }
 
+func exchangeNS(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	msg := makeMsg(domain, dns.TypeNS)
+	return client.Exchange(msg, server)
+}
+
+func handleNS(client *dns.Client, result *dns.Msg, server string) {
+	for _, ans := range result.Answer {
+		if ns, ok := ans.(*dns.NS); ok {
+			fmt.Printf("%s [ttl=%d]\n",
+				removeLastDot(ns.Ns),
+				ns.Hdr.Ttl)
+		}
+	}
+}
+
 var recordMap = map[string]Record {
-	"mx": { Exchange: exchangeMX, Handler: handleMX },
-	"mail": { Exchange: exchangeMX, Handler: handleMX },
-	"a": { Exchange: exchangeA, Handler: handleA },
-	"aaaa": { Exchange: exchangeAAAA, Handler: handleAAAA },
-	"soa": { Exchange: exchangeSOA, Handler: handleSOA },
-	"origin": { Exchange: exchangeSOA, Handler: handleSOA },
-	"srv": { Exchange: exchangeSRV, Handler: handleSRV },
-	"sip": { Exchange: exchangeSIP, Handler: handleSRV },
-	"cname": { Exchange: exchangeCNAME, Handler: handleCNAME },
-	"txt": { Exchange: exchangeTXT, Handler: handleTXT },
-	"dmarc": { Exchange: exchangeDMARC, Handler: handleTXT },
+	"MX": { Exchange: exchangeMX, Handler: handleMX },
+	"MAIL": { Exchange: exchangeMX, Handler: handleMX },
+	"A": { Exchange: exchangeA, Handler: handleA },
+	"AAAA": { Exchange: exchangeAAAA, Handler: handleAAAA },
+	"SOA": { Exchange: exchangeSOA, Handler: handleSOA },
+	"ORIGIN": { Exchange: exchangeSOA, Handler: handleSOA },
+	"SRV": { Exchange: exchangeSRV, Handler: handleSRV },
+	"SIP": { Exchange: exchangeSIP, Handler: handleSRV },
+	"CNAME": { Exchange: exchangeCNAME, Handler: handleCNAME },
+	"TXT": { Exchange: exchangeTXT, Handler: handleTXT },
+	"DMARC": { Exchange: exchangeDMARC, Handler: handleTXT, Alias: "TXT" },
+	"NS": { Exchange: exchangeNS, Handler: handleNS },
 }
 
 func mboxToEmail(mbox string) string {
@@ -268,7 +262,7 @@ func rateRTT(rtt time.Duration) RTTCategory {
 }
 
 func init() {
-	flag.BoolVar(&recursiveCNAME, "R", false, "Recursive CNAME look up")
+	flag.BoolVar(&recursionLookup, "Recursion", true, "Recursion look up")
 }
 
 func main() {
@@ -290,7 +284,7 @@ func main() {
 	recordType := defaultRecordType
  
 	if flag.NArg() == 2 {
-		recordType = flag.Arg(1)
+		recordType = strings.ToUpper(flag.Arg(1))
 	}
 
 	config, _ := dns.ClientConfigFromFile(resolvConfPath)
@@ -307,7 +301,15 @@ func main() {
 
 		cat := rateRTT(rtt)
 		numAnswers := len(result.Answer)
+		recordOutput := recordType
 
+		if record.Alias != "" {
+			recordOutput = record.Alias
+		}
+		
+		fmt.Printf("%s %s\n",
+			recordOutput,
+			domain)
 		fmt.Printf("code=%d num=%d rtt=%dms [%s]\n",
 			result.Rcode,
 			numAnswers,
