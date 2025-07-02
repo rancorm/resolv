@@ -269,7 +269,7 @@ func main() {
 	flag.Usage = func() {
 		w := flag.CommandLine.Output()
 		progname := filepath.Base(os.Args[0])
-		fmt.Fprintf(w, "Usage: %s [-h] <domain> <record>\n", progname)
+		fmt.Fprintf(w, "Usage: %s [-h] <domain> [record]\n", progname)
 		flag.PrintDefaults()
 	}
 

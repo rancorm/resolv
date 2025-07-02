@@ -4,9 +4,13 @@ Modern DNS lookup utility
 
 ## Usage
 
+Just pass the `domain` you want to lookup and you're in business.
+
 ```
-Usage: resolv <domain> <record>
+Usage: resolv [-h] <domain> [record]
 ```
+
+Lookup mail (MX) records.
 
 ```sh
 resolv cormier.co mx
