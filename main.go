@@ -6,12 +6,13 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-
+	"flag"
+	
 	"github.com/miekg/dns"
 )
 
 type ExchangeFunc func(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error)
-type HandlerFunc func(*dns.Msg)
+type HandlerFunc func(client *dns.Client, result *dns.Msg, server string)
 
 type Record struct {
 	Exchange ExchangeFunc
@@ -28,6 +29,17 @@ const (
 	defaultRecordType = "a"
 )
 
+var (
+	recursiveCNAME bool
+)
+
+func exchangeDMARC(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	msg := new(dns.Msg)
+	msg.SetQuestion("_dmarc." + domain, dns.TypeTXT)
+
+	return client.Exchange(msg, server)
+}
+
 func exchangeSIP(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
 	msg := new(dns.Msg)
 	msg.SetQuestion("_sip._tcp." + domain, dns.TypeSRV)
@@ -42,21 +54,18 @@ func exchangeSRV(client *dns.Client, domain string, server string) (*dns.Msg, ti
 	return client.Exchange(msg, server)
 }
 
-func handleSRV(result *dns.Msg) {
+func handleSRV(client *dns.Client, result *dns.Msg, server string) {
 	for _, ans := range result.Answer {
 		switch rr := ans.(type) {
 		case *dns.SRV:
-			fmt.Printf("%s ttl=%d p=%d w=%d port=%d\n",
+			fmt.Printf("%s [ttl=%d p=%d w=%d port=%d]\n",
 				removeLastDot(rr.Target),
 				rr.Hdr.Ttl,
 				rr.Priority,
 				rr.Weight,
 				rr.Port)
 		case *dns.CNAME:
-			fmt.Printf("%s > %s ttl=%d\n",
-				removeLastDot(rr.Hdr.Name),
-				removeLastDot(rr.Target),
-				rr.Hdr.Ttl)
+			handleCNAME(client, result, server)
 		}
 	}
 }
@@ -68,10 +77,11 @@ func exchangeMX(client *dns.Client, domain string, server string) (*dns.Msg, tim
 	return client.Exchange(msg, server)
 }
 
-func handleMX(result *dns.Msg) {
+func handleMX(client *dns.Client, result *dns.Msg, server string) {
 	for _, ans := range result.Answer {
 		if mx, ok := ans.(*dns.MX); ok {
-			fmt.Printf("%s/%d\n", removeLastDot(mx.Mx),
+			fmt.Printf("%s [pref=%d]\n",
+				removeLastDot(mx.Mx),
 				mx.Preference)
 		}
 	}
@@ -84,10 +94,12 @@ func exchangeA(client *dns.Client, domain string, server string) (*dns.Msg, time
 	return client.Exchange(msg, server)
 }
 
-func handleA(result *dns.Msg) {
+func handleA(client *dns.Client, result *dns.Msg, server string) {
 	for _, ans := range result.Answer {
 		if a, ok := ans.(*dns.A); ok {
-			fmt.Printf("%s\n", a.A.String())
+			fmt.Printf("%s [ttl=%d]\n",
+				a.A.String(),
+				a.Hdr.Ttl)
 		}
 	}
 }
@@ -99,10 +111,12 @@ func exchangeAAAA(client *dns.Client, domain string, server string) (*dns.Msg, t
 	return client.Exchange(msg, server)
 }
 
-func handleAAAA(result *dns.Msg) {
+func handleAAAA(client *dns.Client, result *dns.Msg, server string) {
 	for _, ans := range result.Answer {
 		if aaaa, ok := ans.(*dns.AAAA); ok {
-			fmt.Printf("%s\n", aaaa.AAAA.String())
+			fmt.Printf("%s [ttl=%d]\n",
+				aaaa.AAAA.String(),
+				aaaa.Hdr.Ttl)
 		}
 	}
 }
@@ -114,10 +128,10 @@ func exchangeSOA(client *dns.Client, domain string, server string) (*dns.Msg, ti
 	return client.Exchange(msg, server)
 }
 
-func handleSOA(result *dns.Msg) {
+func handleSOA(client *dns.Client, result *dns.Msg, server string) {
 	for _, ans := range result.Answer {
 		if soa, ok := ans.(*dns.SOA); ok {
-			fmt.Printf("%s ttl=%d ser=%d ref=%d ret=%d min=%d %s\n",
+			fmt.Printf("%s\t[ttl=%d ser=%d ref=%d ret=%d min=%d %s]\n",
 				removeLastDot(soa.Ns),
 				soa.Hdr.Ttl,
 				soa.Serial,
@@ -129,6 +143,58 @@ func handleSOA(result *dns.Msg) {
 	}
 }
 
+func exchangeCNAME(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	msg := new(dns.Msg)
+	msg.SetQuestion(domain, dns.TypeCNAME)
+
+	return client.Exchange(msg, server)
+}
+
+func handleCNAME(client *dns.Client, result *dns.Msg, server string) {
+	for _, ans := range result.Answer {
+		if cname, ok := ans.(*dns.CNAME); ok {
+			fmt.Printf("%s > %s [ttl=%d]\n",
+				removeLastDot(cname.Hdr.Name),
+				removeLastDot(cname.Target),
+				cname.Hdr.Ttl)
+			
+			if recursiveCNAME {
+				a, rtt, _ := exchangeA(client, cname.Target, server)
+				num := len(a.Answer)
+				cat := rateRTT(rtt)
+
+				fmt.Printf("code=%d num=%d rtt=%dms [%s]\n-\n",
+					result.Rcode,
+					num,
+					rtt.Milliseconds(),
+					cat.Rating)
+				
+				handleA(client, a, server)
+			}
+		}
+	}
+}
+
+func exchangeTXT(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	msg := new(dns.Msg)
+	msg.SetQuestion(domain, dns.TypeTXT)
+
+	return client.Exchange(msg, server)
+}
+
+func handleTXT(client *dns.Client, result *dns.Msg, server string) {
+	for _, ans := range result.Answer {
+		if txt, ok := ans.(*dns.TXT); ok {
+			// TXT records can be multi-line (?)
+			for _, value := range txt.Txt {
+				fmt.Printf("%s \"%s\" [ttl=%d]\n",
+					removeLastDot(txt.Hdr.Name),
+					value,
+					txt.Hdr.Ttl)
+			}
+		}
+	}
+}
 
 var recordMap = map[string]Record {
 	"mx": { Exchange: exchangeMX, Handler: handleMX },
@@ -139,6 +205,9 @@ var recordMap = map[string]Record {
 	"origin": { Exchange: exchangeSOA, Handler: handleSOA },
 	"srv": { Exchange: exchangeSRV, Handler: handleSRV },
 	"sip": { Exchange: exchangeSIP, Handler: handleSRV },
+	"cname": { Exchange: exchangeCNAME, Handler: handleCNAME },
+	"txt": { Exchange: exchangeTXT, Handler: handleTXT },
+	"dmarc": { Exchange: exchangeDMARC, Handler: handleTXT },
 }
 
 func mboxToEmail(mbox string) string {
@@ -198,18 +267,30 @@ func rateRTT(rtt time.Duration) RTTCategory {
 	return cat
 }
 
+func init() {
+	flag.BoolVar(&recursiveCNAME, "R", false, "Recursive CNAME look up")
+}
+
 func main() {
-	if len(os.Args) < 2 {
+	flag.Usage = func() {
+		w := flag.CommandLine.Output()
 		progname := filepath.Base(os.Args[0])
-		fmt.Printf("Usage: %s <domain> <record>\n", progname)
-		os.Exit(1)
+		fmt.Fprintf(w, "Usage: %s [-h] <domain> <record>\n", progname)
+		flag.PrintDefaults()
 	}
 
-	domain := os.Args[1]
+	flag.Parse()
+
+	if flag.NArg() < 1 {
+		flag.Usage()
+		os.Exit(255)
+	}
+
+	domain := flag.Arg(0)
 	recordType := defaultRecordType
  
-	if len(os.Args) == 3 {
-		recordType = os.Args[2]
+	if flag.NArg() == 2 {
+		recordType = flag.Arg(1)
 	}
 
 	config, _ := dns.ClientConfigFromFile(resolvConfPath)
@@ -241,7 +322,7 @@ func main() {
 		// Output records
 		if numAnswers > 0 {
 			fmt.Printf("-\n")
-			record.Handler(result)
+			record.Handler(client, result, server)
 		}
 	} else {
 		fmt.Fprintf(os.Stderr, "Type not supported: %s\n", recordType)
