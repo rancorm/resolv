@@ -26,6 +26,14 @@ type RTTCategory struct {
 	Description string
 }
 
+type SSHFPAlgorithm struct {
+	Name string
+}
+
+type SSHFPType struct {
+	Name string
+}
+
 const (
 	resolvConfPath = "/etc/resolv.conf"
 	defaultRecordType = "A"
@@ -205,6 +213,49 @@ func handlePTR(client *dns.Client, result *dns.Msg, server string) {
 	}
 }
 
+func exchangeSSHFP(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	msg := makeMsg(domain, dns.TypeSSHFP)
+	return client.Exchange(msg, server)
+}
+
+func handleSSHFP(client *dns.Client, result *dns.Msg, server string) {
+	for _, ans := range result.Answer {
+		if sshfp, ok := ans.(*dns.SSHFP); ok {
+			fmt.Printf("%s %s %s [ttl=%d]\n",
+				sshfpAlgorithms[sshfp.Algorithm],
+				sshfpTypes[sshfp.Type],
+				sshfp.FingerPrint,
+				sshfp.Hdr.Ttl)
+		}
+	}
+}
+
+func handleSPF(client *dns.Client, result *dns.Msg, server string) {
+	var spfRecords []string
+
+
+	for _, ans := range result.Answer {
+		if txt, ok := ans.(*dns.TXT); ok {
+			for _, line := range txt.Txt {
+				if strings.HasPrefix(line, "v=spf1") {
+					spfRecords = append(spfRecords,
+						fmt.Sprintf("%s [ttl=%d]",
+							line,
+							txt.Hdr.Ttl))
+				}
+			}
+		}
+	}
+	
+	if len(spfRecords) == 0 {
+		fmt.Println("No SPF records found.")
+	} else {
+		for _, record := range spfRecords {
+			fmt.Printf("%s\n", record)
+		}
+	}
+}
+
 var recordMap = map[string]Record {
 	"MX": { Exchange: exchangeMX, Handler: handleMX },
 	"MAIL": { Exchange: exchangeMX, Handler: handleMX },
@@ -213,12 +264,29 @@ var recordMap = map[string]Record {
 	"SOA": { Exchange: exchangeSOA, Handler: handleSOA },
 	"ORIGIN": { Exchange: exchangeSOA, Handler: handleSOA },
 	"SRV": { Exchange: exchangeSRV, Handler: handleSRV },
-	"SIP": { Exchange: exchangeSIP, Handler: handleSRV },
+	"SIP": { Exchange: exchangeSIP, Handler: handleSRV, Alias: "SRV" },
 	"CNAME": { Exchange: exchangeCNAME, Handler: handleCNAME },
 	"TXT": { Exchange: exchangeTXT, Handler: handleTXT },
 	"DMARC": { Exchange: exchangeDMARC, Handler: handleTXT, Alias: "TXT" },
 	"NS": { Exchange: exchangeNS, Handler: handleNS },
 	"PTR": { Exchange: exchangePTR, Handler: handlePTR },
+	"SSHFP": { Exchange: exchangeSSHFP, Handler: handleSSHFP },
+	"SPF": { Exchange: exchangeTXT, Handler: handleSPF, Alias: "TXT" },
+}
+
+var sshfpAlgorithms = []SSHFPAlgorithm {
+	{ Name: "reserved" },
+    	{ Name: "RSA" },
+	{ Name: "DSA" },
+	{ Name: "ECDSA" },
+	{ Name: "Ed25519" },
+	{ Name: "Ed448" },
+}
+
+var sshfpTypes = []SSHFPType {
+	{ Name: "reserved" },
+	{ Name: "SHA-1" },
+	{ Name: "SHA-256" },
 }
 
 func mboxToEmail(mbox string) string {
