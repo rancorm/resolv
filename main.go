@@ -189,6 +189,22 @@ func handleNS(client *dns.Client, result *dns.Msg, server string) {
 	}
 }
 
+func exchangePTR(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	msg := makeMsg(domain, dns.TypePTR)
+	return client.Exchange(msg, server)
+}
+
+func handlePTR(client *dns.Client, result *dns.Msg, server string) {
+	for _, ans := range result.Answer {
+		if ptr, ok := ans.(*dns.PTR); ok {
+			fmt.Printf("%s > %s [ttl=%d]\n",
+				removeLastDot(ptr.Hdr.Name),
+				removeLastDot(ptr.Ptr),
+				ptr.Hdr.Ttl)
+		}
+	}
+}
+
 var recordMap = map[string]Record {
 	"MX": { Exchange: exchangeMX, Handler: handleMX },
 	"MAIL": { Exchange: exchangeMX, Handler: handleMX },
@@ -202,6 +218,7 @@ var recordMap = map[string]Record {
 	"TXT": { Exchange: exchangeTXT, Handler: handleTXT },
 	"DMARC": { Exchange: exchangeDMARC, Handler: handleTXT, Alias: "TXT" },
 	"NS": { Exchange: exchangeNS, Handler: handleNS },
+	"PTR": { Exchange: exchangePTR, Handler: handlePTR },
 }
 
 func mboxToEmail(mbox string) string {
