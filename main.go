@@ -48,6 +48,7 @@ var (
 	listRecords bool
 	recursiveCNAMELookup bool
 	targetServer string
+	arpaLookup bool
 )
 
 func makeMsg(domain string, what uint16) *dns.Msg {
@@ -364,6 +365,22 @@ func handleSPF(client *dns.Client, result *dns.Msg, server string) error {
 	return nil
 }
 
+func exchangeDHCID(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	msg := makeMsg(domain, dns.TypeDHCID)
+	return client.Exchange(msg, server)
+}
+
+func handleDHCID(client *dns.Client, result *dns.Msg, server string) error {
+	for _, ans := range result.Answer {
+		if dhcid, ok := ans.(*dns.DHCID); ok {
+			fmt.Printf("%s\n",
+				dhcid.Digest)
+		}
+	}
+
+	return nil
+}
+
 var recordMap = map[string]Record {
 	"MX": {
 		Exchange: exchangeMX,
@@ -442,6 +459,12 @@ var recordMap = map[string]Record {
 		Handler: handleSPF,
 		Alias: "TXT",
 		Description: "Alias to SPF TXT",
+	},
+	"DHCID": {
+		Exchange: exchangeDHCID,
+		Handler: handleDHCID,
+		Description: "DHCP identifier",
+	
 	},
 }
 
@@ -531,16 +554,84 @@ func printRecordTypes() {
 	}
 }
 
-func endsWithInt(str string) bool {
-	index := strings.LastIndex(str, ":")
+func endsWithInt(s string) bool {
+	index := strings.LastIndex(s, ":")
 
-	if index == -1 || index == len(str) - 1 {
+	if index == -1 || index == len(s) - 1 {
 		return false
 	}
 
-	_, err := strconv.Atoi(str[index + 1:])
+	_, err := strconv.Atoi(s[index + 1:])
 
 	return err == nil
+}
+
+func ipToArpa(addr string, version int) (string, error) {
+	ip := net.ParseIP(addr)
+
+	if ip == nil {
+		return "", fmt.Errorf("Invalid IP address: %s", addr)
+	}
+
+	switch version {
+	case 4:
+		ip4 := ip.To4()
+		
+		if ip4 == nil {
+			return "", fmt.Errorf("Not an IPv4 address: %s", addr)
+		}
+		
+		octets := strings.Split(ip4.String(), ".")
+		
+		for i, j := 0, len(octets) - 1; i < j; i, j = i + 1, j - 1 {
+			octets[i], octets[j] = octets[j], octets[i]
+		}
+		
+		return strings.Join(octets, ".") + ".in-addr.arpa", nil
+	case 6:
+		ip6 := ip.To16()
+		
+		if ip6 == nil || ip.To4() != nil {
+			return "", fmt.Errorf("Not an IPv6 address: %s", addr)
+		}
+		
+		// Correctly expand IPv6 to its full form
+		var arpaAddr strings.Builder
+		
+		// Process each byte in reverse order
+		for i := len(ip6) - 1; i >= 0; i-- {
+			// Each byte becomes two hex digits
+			hexStr := fmt.Sprintf("%02x", ip6[i])
+			
+			// Add each hex digit separately with a dot
+			arpaAddr.WriteString(string(hexStr[1]))
+			arpaAddr.WriteString(".")
+			arpaAddr.WriteString(string(hexStr[0]))
+		
+			if i > 0 {
+				arpaAddr.WriteString(".")
+			}
+		}
+		
+		arpaAddr.WriteString(".ip6.arpa")
+        
+        	return arpaAddr.String(), nil
+	default:
+		return "", fmt.Errorf("Unknown IP version: %d", version)
+	}
+}
+
+func ipVersion(s string) int {
+	ip := net.ParseIP(s)
+
+	if ip == nil {
+		return 0
+	}
+	if ip.To4() != nil {
+		return 4
+	}
+
+	return 6
 }
 
 func init() {
@@ -548,6 +639,7 @@ func init() {
 	flag.BoolVar(&listRecords, "Records", false, "List record types")
 	flag.BoolVar(&recursiveCNAMELookup, "Recursive", false, "Recursive CNAME lookup")
 	flag.StringVar(&targetServer, "Server", "", "Target server")
+	flag.BoolVar(&arpaLookup, "Arpa", false, "in-addr.arpa lookup")
 }
 
 func main() {
@@ -592,10 +684,17 @@ func main() {
 		server = net.JoinHostPort(config.Servers[0], config.Port)
 	}
 
+	// in-addr.arpa lookup
+	if arpaLookup {
+		version := ipVersion(domain)
+		domain, _ = ipToArpa(domain, version)
+		recordType = "PTR"
+	}
+
 	client := new(dns.Client)
 
 	if record, ok := recordMap[recordType]; ok {
-		result, rtt, err := record.Exchange(client, domain + ".", server)
+		result, rtt, err := record.Exchange(client, dns.Fqdn(domain), server)
 
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "err: %v\n", err)
@@ -627,7 +726,12 @@ func main() {
 		// Output records
 		if numAnswers > 0 {
 			fmt.Printf("-\n")
-			record.Handler(client, result, server)
+			
+			herr := record.Handler(client, result, server)
+
+			if herr != nil {
+				fmt.Fprintf(os.Stderr, "err: %v\n", herr)	
+			}
 		}
 	} else {
 		fmt.Fprintf(os.Stderr, "Type not supported: %s\n", recordType)
