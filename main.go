@@ -13,7 +13,7 @@ import (
 )
 
 type ExchangeFunc func(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error)
-type HandlerFunc func(client *dns.Client, result *dns.Msg, server string)
+type HandlerFunc func(client *dns.Client, result *dns.Msg, server string) error
 
 type Record struct {
 	Exchange ExchangeFunc
@@ -43,6 +43,7 @@ const (
 var (
 	recursionLookup bool
 	listRecords bool
+	recursiveCNAMELookup bool
 )
 
 func makeMsg(domain string, what uint16) *dns.Msg {
@@ -68,7 +69,7 @@ func exchangeSRV(client *dns.Client, domain string, server string) (*dns.Msg, ti
 	return client.Exchange(msg, server)
 }
 
-func handleSRV(client *dns.Client, result *dns.Msg, server string) {
+func handleSRV(client *dns.Client, result *dns.Msg, server string) error {
 	for _, ans := range result.Answer {
 		switch rr := ans.(type) {
 		case *dns.SRV:
@@ -82,6 +83,8 @@ func handleSRV(client *dns.Client, result *dns.Msg, server string) {
 			handleCNAME(client, result, server)
 		}
 	}
+
+	return nil
 }
 
 func exchangeMX(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
@@ -89,7 +92,7 @@ func exchangeMX(client *dns.Client, domain string, server string) (*dns.Msg, tim
 	return client.Exchange(msg, server)
 }
 
-func handleMX(client *dns.Client, result *dns.Msg, server string) {
+func handleMX(client *dns.Client, result *dns.Msg, server string) error {
 	for _, ans := range result.Answer {
 		if mx, ok := ans.(*dns.MX); ok {
 			fmt.Printf("%s [pref=%d]\n",
@@ -97,6 +100,8 @@ func handleMX(client *dns.Client, result *dns.Msg, server string) {
 				mx.Preference)
 		}
 	}
+
+	return nil
 }
 
 func exchangeA(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
@@ -104,7 +109,7 @@ func exchangeA(client *dns.Client, domain string, server string) (*dns.Msg, time
 	return client.Exchange(msg, server)
 }
 
-func handleA(client *dns.Client, result *dns.Msg, server string) {
+func handleA(client *dns.Client, result *dns.Msg, server string) error {
 	for _, ans := range result.Answer {
 		if a, ok := ans.(*dns.A); ok {
 			fmt.Printf("%s [ttl=%d]\n",
@@ -112,6 +117,8 @@ func handleA(client *dns.Client, result *dns.Msg, server string) {
 				a.Hdr.Ttl)
 		}
 	}
+
+	return nil
 }
 
 func exchangeAAAA(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
@@ -119,7 +126,7 @@ func exchangeAAAA(client *dns.Client, domain string, server string) (*dns.Msg, t
 	return client.Exchange(msg, server)
 }
 
-func handleAAAA(client *dns.Client, result *dns.Msg, server string) {
+func handleAAAA(client *dns.Client, result *dns.Msg, server string) error {
 	for _, ans := range result.Answer {
 		if aaaa, ok := ans.(*dns.AAAA); ok {
 			fmt.Printf("%s [ttl=%d]\n",
@@ -127,6 +134,8 @@ func handleAAAA(client *dns.Client, result *dns.Msg, server string) {
 				aaaa.Hdr.Ttl)
 		}
 	}
+
+	return nil
 }
 
 func exchangeSOA(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
@@ -134,7 +143,7 @@ func exchangeSOA(client *dns.Client, domain string, server string) (*dns.Msg, ti
 	return client.Exchange(msg, server)
 }
 
-func handleSOA(client *dns.Client, result *dns.Msg, server string) {
+func handleSOA(client *dns.Client, result *dns.Msg, server string) error {
 	for _, ans := range result.Answer {
 		if soa, ok := ans.(*dns.SOA); ok {
 			fmt.Printf("%s\t[ttl=%d ser=%d ref=%d ret=%d min=%d %s]\n",
@@ -147,6 +156,8 @@ func handleSOA(client *dns.Client, result *dns.Msg, server string) {
 				mboxToEmail(soa.Mbox))
 		}
 	}
+
+	return nil
 }
 
 func exchangeCNAME(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
@@ -154,15 +165,97 @@ func exchangeCNAME(client *dns.Client, domain string, server string) (*dns.Msg, 
 	return client.Exchange(msg, server)
 }
 
-func handleCNAME(client *dns.Client, result *dns.Msg, server string) {
-	for _, ans := range result.Answer {
-		if cname, ok := ans.(*dns.CNAME); ok {
-			fmt.Printf("%s > %s [ttl=%d]\n",
-				removeLastDot(cname.Hdr.Name),
-				removeLastDot(cname.Target),
-				cname.Hdr.Ttl)
+func handleCNAME(client *dns.Client, result *dns.Msg, server string) error {
+	visited := make(map[string]bool)
+	var current string
+
+	if len(result.Question) == 0 {
+		return fmt.Errorf("No question in DNS message")
+	}
+
+	current = result.Question[0].Name
+
+	for range [15]int{} {
+		if visited[current] {
+			return fmt.Errorf("CNAME loop detected at %s", removeLastDot(current))
+		}
+
+		visited[current] = true
+		foundCNAME := false
+
+		for _, ans := range result.Answer {
+			if cname, ok := ans.(*dns.CNAME); ok && cname.Hdr.Name == current {
+				fmt.Printf("%s > %s [ttl=%d]\n",
+					removeLastDot(cname.Hdr.Name),
+					removeLastDot(cname.Target),
+					cname.Hdr.Ttl)
+			
+				if recursiveCNAMELookup {
+					current = cname.Target
+
+					msg := makeMsg(current, dns.TypeCNAME)
+					nextResult, _, err := client.Exchange(msg, server)
+
+					if err != nil {
+						return err
+					}
+
+					result = nextResult
+				}
+				
+				foundCNAME = true
+				
+				break
+			}
+		}
+
+		if !foundCNAME {
+			msg := makeMsg(current, dns.TypeA)
+			aResult, _, err := client.Exchange(msg, server)
+
+			if err != nil {
+				return err
+			}
+			
+			handleFinalRecords(aResult)
+
+			msg.SetQuestion(current, dns.TypeAAAA)
+			aaaaResult, _, err := client.Exchange(msg, server)
+
+			if err == nil {
+				handleFinalRecords(aaaaResult)
+			}
+
+			return nil
 		}
 	}
+
+	return nil
+}
+
+func handleFinalRecords(result *dns.Msg) {
+	found := false
+    
+	for _, ans := range result.Answer {
+		switch rr := ans.(type) {
+		case *dns.A:
+			fmt.Printf("%s > %s [ttl=%d]\n",
+				removeLastDot(rr.Hdr.Name),
+				rr.A.String(),
+				rr.Hdr.Ttl)
+			found = true
+		case *dns.AAAA:
+			fmt.Printf("%s > %s [ttl=%d]\n",
+				removeLastDot(rr.Hdr.Name),
+				rr.AAAA.String(),
+				rr.Hdr.Ttl)
+			found = true	
+		}
+	}
+	
+	if !found {
+        	fmt.Println("No A or AAAA records found in the response.")
+    	}
 }
 
 func exchangeTXT(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
@@ -170,7 +263,7 @@ func exchangeTXT(client *dns.Client, domain string, server string) (*dns.Msg, ti
 	return client.Exchange(msg, server)
 }
 
-func handleTXT(client *dns.Client, result *dns.Msg, server string) {
+func handleTXT(client *dns.Client, result *dns.Msg, server string) error {
 	for _, ans := range result.Answer {
 		if txt, ok := ans.(*dns.TXT); ok {
 			// TXT records can be multi-line (?)
@@ -182,6 +275,8 @@ func handleTXT(client *dns.Client, result *dns.Msg, server string) {
 			}
 		}
 	}
+
+	return nil
 }
 
 func exchangeNS(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
@@ -189,7 +284,7 @@ func exchangeNS(client *dns.Client, domain string, server string) (*dns.Msg, tim
 	return client.Exchange(msg, server)
 }
 
-func handleNS(client *dns.Client, result *dns.Msg, server string) {
+func handleNS(client *dns.Client, result *dns.Msg, server string) error {
 	for _, ans := range result.Answer {
 		if ns, ok := ans.(*dns.NS); ok {
 			fmt.Printf("%s [ttl=%d]\n",
@@ -197,6 +292,8 @@ func handleNS(client *dns.Client, result *dns.Msg, server string) {
 				ns.Hdr.Ttl)
 		}
 	}
+
+	return nil
 }
 
 func exchangePTR(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
@@ -204,7 +301,7 @@ func exchangePTR(client *dns.Client, domain string, server string) (*dns.Msg, ti
 	return client.Exchange(msg, server)
 }
 
-func handlePTR(client *dns.Client, result *dns.Msg, server string) {
+func handlePTR(client *dns.Client, result *dns.Msg, server string) error {
 	for _, ans := range result.Answer {
 		if ptr, ok := ans.(*dns.PTR); ok {
 			fmt.Printf("%s > %s [ttl=%d]\n",
@@ -213,6 +310,8 @@ func handlePTR(client *dns.Client, result *dns.Msg, server string) {
 				ptr.Hdr.Ttl)
 		}
 	}
+
+	return nil
 }
 
 func exchangeSSHFP(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
@@ -220,7 +319,7 @@ func exchangeSSHFP(client *dns.Client, domain string, server string) (*dns.Msg, 
 	return client.Exchange(msg, server)
 }
 
-func handleSSHFP(client *dns.Client, result *dns.Msg, server string) {
+func handleSSHFP(client *dns.Client, result *dns.Msg, server string) error {
 	for _, ans := range result.Answer {
 		if sshfp, ok := ans.(*dns.SSHFP); ok {
 			fmt.Printf("%s %s %s [ttl=%d]\n",
@@ -230,11 +329,12 @@ func handleSSHFP(client *dns.Client, result *dns.Msg, server string) {
 				sshfp.Hdr.Ttl)
 		}
 	}
+
+	return nil
 }
 
-func handleSPF(client *dns.Client, result *dns.Msg, server string) {
+func handleSPF(client *dns.Client, result *dns.Msg, server string) error {
 	var spfRecords []string
-
 
 	for _, ans := range result.Answer {
 		if txt, ok := ans.(*dns.TXT); ok {
@@ -256,6 +356,8 @@ func handleSPF(client *dns.Client, result *dns.Msg, server string) {
 			fmt.Printf("%s\n", record)
 		}
 	}
+
+	return nil
 }
 
 var recordMap = map[string]Record {
@@ -418,8 +520,9 @@ func printRecordTypes() {
 }
 
 func init() {
-	flag.BoolVar(&recursionLookup, "Recursion", true, "Recursion look up")
+	flag.BoolVar(&recursionLookup, "Recursion", true, "Recursion lookup")
 	flag.BoolVar(&listRecords, "Records", false, "List record types")
+	flag.BoolVar(&recursiveCNAMELookup, "Recursive", false, "Recursive CNAME lookup")
 }
 
 func main() {
