@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 	"flag"
+	"sort"
 	"strings"
 	"strconv"
 
@@ -387,7 +388,7 @@ var recordMap = map[string]Record {
 	"SOA": {
 		Exchange: exchangeSOA,
 		Handler: handleSOA,
-		Description: "Start of Authority",
+		Description: "Start of authority",
 	},
 	"ORIGIN": {
 		Exchange: exchangeSOA,
@@ -517,8 +518,16 @@ func rateRTT(rtt time.Duration) RTTCategory {
 }
 
 func printRecordTypes() {
-	for key, record := range recordMap {
-		fmt.Printf("%8s %s\n", key, record.Description)
+	keys := make([]string, 0, len(recordMap))
+
+	for key := range recordMap {
+		keys = append(keys, key)
+	}
+	
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		fmt.Printf("%8s %s\n", key, recordMap[key].Description)
 	}
 }
 
