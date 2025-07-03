@@ -8,6 +8,7 @@ import (
 	"time"
 	"flag"
 	"strings"
+	"strconv"
 
 	"github.com/miekg/dns"
 )
@@ -38,12 +39,14 @@ type SSHFPType struct {
 const (
 	resolvConfPath = "/etc/resolv.conf"
 	defaultRecordType = "A"
+	defaultDNSPort = "53"
 )
 
 var (
 	recursionLookup bool
 	listRecords bool
 	recursiveCNAMELookup bool
+	targetServer string
 )
 
 func makeMsg(domain string, what uint16) *dns.Msg {
@@ -519,10 +522,23 @@ func printRecordTypes() {
 	}
 }
 
+func endsWithInt(str string) bool {
+	index := strings.LastIndex(str, ":")
+
+	if index == -1 || index == len(str) - 1 {
+		return false
+	}
+
+	_, err := strconv.Atoi(str[index + 1:])
+
+	return err == nil
+}
+
 func init() {
 	flag.BoolVar(&recursionLookup, "Recursion", true, "Recursion lookup")
 	flag.BoolVar(&listRecords, "Records", false, "List record types")
 	flag.BoolVar(&recursiveCNAMELookup, "Recursive", false, "Recursive CNAME lookup")
+	flag.StringVar(&targetServer, "Server", "", "Target server")
 }
 
 func main() {
@@ -548,13 +564,25 @@ func main() {
 
 	domain := flag.Arg(0)
 	recordType := defaultRecordType
- 
+	server := ""
+
 	if flag.NArg() == 2 {
 		recordType = strings.ToUpper(flag.Arg(1))
 	}
 
-	config, _ := dns.ClientConfigFromFile(resolvConfPath)
-	server := net.JoinHostPort(config.Servers[0], config.Port)
+	// Command line provided target server
+	if targetServer != "" {
+		server = targetServer
+
+		if !endsWithInt(server) {
+			server += ":" + defaultDNSPort
+		}
+
+	} else {
+		config, _ := dns.ClientConfigFromFile(resolvConfPath)
+		server = net.JoinHostPort(config.Servers[0], config.Port)
+	}
+
 	client := new(dns.Client)
 
 	if record, ok := recordMap[recordType]; ok {
