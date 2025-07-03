@@ -59,6 +59,31 @@ func makeMsg(domain string, what uint16) *dns.Msg {
 	return msg
 }
 
+func exchangeLDAP(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	msg := makeMsg("_ldap._tcp." + domain, dns.TypeSRV)
+	return client.Exchange(msg, server)
+}
+
+func exchangeKDC(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	msg := makeMsg("_kerberos._tcp." + domain, dns.TypeSRV)
+	return client.Exchange(msg, server)
+}
+
+func exchangeDC(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	msg := makeMsg("_ldap._tcp.dc._msdcs." + domain, dns.TypeSRV)
+	return client.Exchange(msg, server)
+}
+
+func exchangePDC(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	msg := makeMsg("_ldap._tcp.pdc._msdcs." + domain, dns.TypeSRV)
+	return client.Exchange(msg, server)
+}
+
+func exchangeGC(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	msg := makeMsg("_ldap._tcp.gc._msdcs." + domain, dns.TypeSRV)
+	return client.Exchange(msg, server)
+}
+
 func exchangeDMARC(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
 	msg := makeMsg("_dmarc." + domain, dns.TypeTXT)
 	return client.Exchange(msg, server)
@@ -466,10 +491,40 @@ var recordMap = map[string]Record {
 		Description: "DHCP identifier",
 	
 	},
+	"DC": {
+		Exchange: exchangeDC,
+		Handler: handleSRV,
+		Alias: "SRV",
+		Description: "Domain Controllers for Active Directory domain",
+	},
+	"PDC": {
+		Exchange: exchangePDC,
+		Handler: handleSRV,
+		Alias: "SRV",
+		Description: "Primary Domain Controller (PDC) emulator",
+	},
+	"GC": {
+		Exchange: exchangeGC,
+		Handler: handleSRV,
+		Alias: "SRV",
+		Description: "Global Catalog servers",
+	},
+	"KDC": {
+		Exchange: exchangeKDC,
+		Handler: handleSRV,
+		Alias: "SRV",
+		Description: "Kerberos Key Distribution Centers (KDCs)",
+	},
+	"LDAP": {
+		Exchange: exchangeLDAP,
+		Handler: handleSRV,
+		Alias: "SRV",
+		Description: "LDAP service location",
+	},
 }
 
 var sshfpAlgorithms = []SSHFPAlgorithm {
-	{ Name: "reserved" },
+	{ Name: "Reserved" },
     	{ Name: "RSA" },
 	{ Name: "DSA" },
 	{ Name: "ECDSA" },
@@ -478,7 +533,7 @@ var sshfpAlgorithms = []SSHFPAlgorithm {
 }
 
 var sshfpTypes = []SSHFPType {
-	{ Name: "reserved" },
+	{ Name: "Reserved" },
 	{ Name: "SHA-1" },
 	{ Name: "SHA-256" },
 }
@@ -550,8 +605,20 @@ func printRecordTypes() {
 	sort.Strings(keys)
 
 	for _, key := range keys {
-		fmt.Printf("%8s %s\n", key, recordMap[key].Description)
+		keyOutput := ""
+
+		if recordMap[key].Alias != "" {
+			keyOutput += "*"	
+		}
+	
+		keyOutput += key
+
+		fmt.Printf("%8s %s\n",
+			keyOutput,
+			recordMap[key].Description)
 	}
+
+	fmt.Printf("\n* = alias\n")
 }
 
 func endsWithInt(s string) bool {
@@ -647,7 +714,9 @@ func main() {
 		w := flag.CommandLine.Output()
 		progname := filepath.Base(os.Args[0])
 		
-		fmt.Fprintf(w, "Usage: %s [-h] <domain> [record]\n", progname)
+		fmt.Fprintf(w, "Usage: %s [-h] " +
+			"<domain> " +
+			"[record | alias]\n", progname)
 		flag.PrintDefaults()
 	}
 
