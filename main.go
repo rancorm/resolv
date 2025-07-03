@@ -19,6 +19,7 @@ type Record struct {
 	Exchange ExchangeFunc
 	Handler HandlerFunc
 	Alias string
+	Description string
 }
 
 type RTTCategory struct {
@@ -41,6 +42,7 @@ const (
 
 var (
 	recursionLookup bool
+	listRecords bool
 )
 
 func makeMsg(domain string, what uint16) *dns.Msg {
@@ -257,21 +259,84 @@ func handleSPF(client *dns.Client, result *dns.Msg, server string) {
 }
 
 var recordMap = map[string]Record {
-	"MX": { Exchange: exchangeMX, Handler: handleMX },
-	"MAIL": { Exchange: exchangeMX, Handler: handleMX },
-	"A": { Exchange: exchangeA, Handler: handleA },
-	"AAAA": { Exchange: exchangeAAAA, Handler: handleAAAA },
-	"SOA": { Exchange: exchangeSOA, Handler: handleSOA },
-	"ORIGIN": { Exchange: exchangeSOA, Handler: handleSOA },
-	"SRV": { Exchange: exchangeSRV, Handler: handleSRV },
-	"SIP": { Exchange: exchangeSIP, Handler: handleSRV, Alias: "SRV" },
-	"CNAME": { Exchange: exchangeCNAME, Handler: handleCNAME },
-	"TXT": { Exchange: exchangeTXT, Handler: handleTXT },
-	"DMARC": { Exchange: exchangeDMARC, Handler: handleTXT, Alias: "TXT" },
-	"NS": { Exchange: exchangeNS, Handler: handleNS },
-	"PTR": { Exchange: exchangePTR, Handler: handlePTR },
-	"SSHFP": { Exchange: exchangeSSHFP, Handler: handleSSHFP },
-	"SPF": { Exchange: exchangeTXT, Handler: handleSPF, Alias: "TXT" },
+	"MX": {
+		Exchange: exchangeMX,
+		Handler: handleMX,
+		Description: "Mail server",
+	},
+	"MAIL": {
+		Exchange: exchangeMX,
+		Handler: handleMX,
+		Description: "Alias to MX",
+	},
+	"A": {
+		Exchange: exchangeA,
+		Handler: handleA,
+		Description: "IPv4 address",
+	},
+	"AAAA": {
+		Exchange: exchangeAAAA,
+		Handler: handleAAAA,
+		Description: "IPv6 address",
+	},
+	"SOA": {
+		Exchange: exchangeSOA,
+		Handler: handleSOA,
+		Description: "Start of Authority",
+	},
+	"ORIGIN": {
+		Exchange: exchangeSOA,
+		Handler: handleSOA,
+		Description: "Alias to SOA",
+	},
+	"SRV": {
+		Exchange: exchangeSRV,
+		Handler: handleSRV,
+		Description: "Service",
+	},
+	"SIP": { 
+		Exchange: exchangeSIP,
+		Handler: handleSRV,
+		Alias: "SRV",
+		Description: "Alias to SIP SRV",
+	},
+	"CNAME": {
+		Exchange: exchangeCNAME,
+		Handler: handleCNAME,
+		Description: "Canonical name",
+	},
+	"TXT": {
+		Exchange: exchangeTXT,
+		Handler: handleTXT,
+		Description: "Text",
+	},
+	"DMARC": {
+		Exchange: exchangeDMARC,
+		Handler: handleTXT,
+		Alias: "TXT",
+		Description: "Alias to DMARC TXT",
+	},
+	"NS": {
+		Exchange: exchangeNS,
+		Handler: handleNS,
+		Description: "Name server",
+	},
+	"PTR": {
+		Exchange: exchangePTR,
+		Handler: handlePTR,
+		Description: "Pointer",
+	},
+	"SSHFP": {
+		Exchange: exchangeSSHFP,
+		Handler: handleSSHFP,
+		Description: "SSH fingerprint",
+	},
+	"SPF": {
+		Exchange: exchangeTXT,
+		Handler: handleSPF,
+		Alias: "TXT",
+		Description: "Alias to SPF TXT",
+	},
 }
 
 var sshfpAlgorithms = []SSHFPAlgorithm {
@@ -346,19 +411,32 @@ func rateRTT(rtt time.Duration) RTTCategory {
 	return cat
 }
 
+func printRecordTypes() {
+	for key, record := range recordMap {
+		fmt.Printf("%8s %s\n", key, record.Description)
+	}
+}
+
 func init() {
 	flag.BoolVar(&recursionLookup, "Recursion", true, "Recursion look up")
+	flag.BoolVar(&listRecords, "Records", false, "List record types")
 }
 
 func main() {
 	flag.Usage = func() {
 		w := flag.CommandLine.Output()
 		progname := filepath.Base(os.Args[0])
+		
 		fmt.Fprintf(w, "Usage: %s [-h] <domain> [record]\n", progname)
 		flag.PrintDefaults()
 	}
 
 	flag.Parse()
+
+	if listRecords {
+		printRecordTypes()
+		os.Exit(255)
+	}
 
 	if flag.NArg() < 1 {
 		flag.Usage()
