@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -92,6 +93,58 @@ func exchangeDMARC(client *dns.Client, domain string, server string) (*dns.Msg, 
 func exchangeSIP(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
 	msg := makeMsg("_sip._tcp." + domain, dns.TypeSRV)
 	return client.Exchange(msg, server)
+}
+
+func exchangeLOC(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	msg := makeMsg(domain, dns.TypeLOC)
+	return client.Exchange(msg, server)
+}
+
+func handleLOC(client *dns.Client, result *dns.Msg, server string) error {
+	const twoTo31 = 1 << 31
+	latHemi := [2]string{ "S", "N"}
+	lonHemi := [2]string{ "W", "E"}
+
+	for _, ans := range result.Answer {
+		if loc, ok := ans.(*dns.LOC); ok {
+			// Latitude
+			lat := float64(loc.Latitude) - twoTo31
+			lat /= 3600000.0
+			latIndex := 1
+
+			if lat < 0 {
+				latIndex = 0
+			}
+
+			// Longitude
+			lon := float64(loc.Longitude) - twoTo31
+			lon /= 3600000.0
+			lonIndex := 1
+
+			if lon < 0 {
+				lonIndex = 0
+			}
+
+			// Altitude
+			alt := float64(loc.Altitude) / 100.0 - 100000.0
+
+			// Location output (decimal degrees, ISO 6709, geo URI)
+			fmt.Printf(" dd:%.6f° %s, %.6f° %s, %.2f m\n",
+				math.Abs(lat), latHemi[latIndex],
+				math.Abs(lon), lonHemi[lonIndex],
+				alt)
+			fmt.Printf("iso:%+09.4f%+010.4f%+07.1f/\n",
+				lat,
+				lon,
+				alt)
+			fmt.Printf("geo:%.6f,%.6f,%.2f\n",
+				lat,
+				lon,
+				alt)
+		}
+	}
+
+	return nil
 }
 
 func exchangeSRV(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
@@ -520,6 +573,11 @@ var recordMap = map[string]Record {
 		Handler: handleSRV,
 		Alias: "SRV",
 		Description: "LDAP service location",
+	},
+	"LOC": {
+		Exchange: exchangeLOC,
+		Handler: handleLOC,
+		Description: "Geographical location",
 	},
 }
 
