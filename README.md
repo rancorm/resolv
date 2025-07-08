@@ -7,7 +7,7 @@ Modern DNS lookup utility
 Just pass the `domain` you want to lookup and you're in business.
 
 ```
-Usage: resolv [-h] <domain> [record]
+Usage: resolv [-h] <domain | IP> [record | alias]
 ```
 
 Lookup mail (MX) records.

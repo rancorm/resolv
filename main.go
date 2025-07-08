@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"math"
 	"net"
 	"os"
@@ -61,44 +62,41 @@ func makeMsg(domain string, what uint16) *dns.Msg {
 	return msg
 }
 
+func exchangeMsg(client *dns.Client, domain string, server string, what uint16) (*dns.Msg, time.Duration, error) {
+	msg := makeMsg(domain, what)
+	return client.Exchange(msg, server) 
+}
+
 func exchangeLDAP(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := makeMsg("_ldap._tcp." + domain, dns.TypeSRV)
-	return client.Exchange(msg, server)
+	return exchangeMsg(client, "_ldap._tcp." + domain, server, dns.TypeSRV)
 }
 
 func exchangeKDC(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := makeMsg("_kerberos._tcp." + domain, dns.TypeSRV)
-	return client.Exchange(msg, server)
+	return exchangeMsg(client, "_kerberos._tcp." + domain, server, dns.TypeSRV)
 }
 
 func exchangeDC(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := makeMsg("_ldap._tcp.dc._msdcs." + domain, dns.TypeSRV)
-	return client.Exchange(msg, server)
+	return exchangeMsg(client, "_ldap._tcp.dc._msdcs." + domain, server, dns.TypeSRV)
 }
 
 func exchangePDC(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := makeMsg("_ldap._tcp.pdc._msdcs." + domain, dns.TypeSRV)
-	return client.Exchange(msg, server)
+	return exchangeMsg(client, "_ldap._tcp.pdc._msdcs." + domain, server, dns.TypeSRV)
 }
 
 func exchangeGC(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := makeMsg("_ldap._tcp.gc._msdcs." + domain, dns.TypeSRV)
-	return client.Exchange(msg, server)
+	return exchangeMsg(client, "_ldap._tcp.gc._msdcs." + domain, server, dns.TypeSRV)
 }
 
 func exchangeDMARC(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := makeMsg("_dmarc." + domain, dns.TypeTXT)
-	return client.Exchange(msg, server)
+	return exchangeMsg(client, "_dmarc." + domain, server, dns.TypeTXT)
 }
 
 func exchangeSIP(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := makeMsg("_sip._tcp." + domain, dns.TypeSRV)
-	return client.Exchange(msg, server)
+	return exchangeMsg(client, "_sip._tcp." + domain, server, dns.TypeSRV)
 }
 
 func exchangeLOC(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := makeMsg(domain, dns.TypeLOC)
-	return client.Exchange(msg, server)
+	return exchangeMsg(client, domain, server, dns.TypeLOC)
 }
 
 func handleLOC(client *dns.Client, result *dns.Msg, server string) error {
@@ -149,8 +147,7 @@ func handleLOC(client *dns.Client, result *dns.Msg, server string) error {
 }
 
 func exchangeSRV(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := makeMsg(domain, dns.TypeSRV)
-	return client.Exchange(msg, server)
+	return exchangeMsg(client, domain, server, dns.TypeSRV)
 }
 
 func handleSRV(client *dns.Client, result *dns.Msg, server string) error {
@@ -172,8 +169,7 @@ func handleSRV(client *dns.Client, result *dns.Msg, server string) error {
 }
 
 func exchangeMX(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := makeMsg(domain, dns.TypeMX)
-	return client.Exchange(msg, server)
+	return exchangeMsg(client, domain, server, dns.TypeMX)
 }
 
 func handleMX(client *dns.Client, result *dns.Msg, server string) error {
@@ -189,8 +185,7 @@ func handleMX(client *dns.Client, result *dns.Msg, server string) error {
 }
 
 func exchangeA(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := makeMsg(domain, dns.TypeA)
-	return client.Exchange(msg, server)
+	return exchangeMsg(client, domain, server, dns.TypeA)
 }
 
 func handleA(client *dns.Client, result *dns.Msg, server string) error {
@@ -206,8 +201,7 @@ func handleA(client *dns.Client, result *dns.Msg, server string) error {
 }
 
 func exchangeAAAA(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := makeMsg(domain, dns.TypeAAAA)
-	return client.Exchange(msg, server)
+	return exchangeMsg(client, domain, server, dns.TypeAAAA)
 }
 
 func handleAAAA(client *dns.Client, result *dns.Msg, server string) error {
@@ -223,14 +217,13 @@ func handleAAAA(client *dns.Client, result *dns.Msg, server string) error {
 }
 
 func exchangeSOA(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := makeMsg(domain, dns.TypeSOA)
-	return client.Exchange(msg, server)
+	return exchangeMsg(client, domain, server, dns.TypeSOA)
 }
 
 func handleSOA(client *dns.Client, result *dns.Msg, server string) error {
 	for _, ans := range result.Answer {
 		if soa, ok := ans.(*dns.SOA); ok {
-			fmt.Printf("%s\t[ttl=%d ser=%d ref=%d ret=%d min=%d %s]\n",
+			fmt.Printf("%s [ttl=%d ser=%d ref=%d ret=%d min=%d %s]\n",
 				removeLastDot(soa.Ns),
 				soa.Hdr.Ttl,
 				soa.Serial,
@@ -245,8 +238,7 @@ func handleSOA(client *dns.Client, result *dns.Msg, server string) error {
 }
 
 func exchangeCNAME(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := makeMsg(domain, dns.TypeCNAME)
-	return client.Exchange(msg, server)
+	return exchangeMsg(client, domain, server, dns.TypeCNAME)
 }
 
 func handleCNAME(client *dns.Client, result *dns.Msg, server string) error {
@@ -343,8 +335,7 @@ func handleFinalRecords(result *dns.Msg) {
 }
 
 func exchangeTXT(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := makeMsg(domain, dns.TypeTXT)
-	return client.Exchange(msg, server)
+	return exchangeMsg(client, domain, server, dns.TypeTXT)
 }
 
 func handleTXT(client *dns.Client, result *dns.Msg, server string) error {
@@ -364,8 +355,7 @@ func handleTXT(client *dns.Client, result *dns.Msg, server string) error {
 }
 
 func exchangeNS(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := makeMsg(domain, dns.TypeNS)
-	return client.Exchange(msg, server)
+	return exchangeMsg(client, domain, server, dns.TypeNS)
 }
 
 func handleNS(client *dns.Client, result *dns.Msg, server string) error {
@@ -381,8 +371,7 @@ func handleNS(client *dns.Client, result *dns.Msg, server string) error {
 }
 
 func exchangePTR(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := makeMsg(domain, dns.TypePTR)
-	return client.Exchange(msg, server)
+	return exchangeMsg(client, domain, server, dns.TypePTR)
 }
 
 func handlePTR(client *dns.Client, result *dns.Msg, server string) error {
@@ -399,8 +388,7 @@ func handlePTR(client *dns.Client, result *dns.Msg, server string) error {
 }
 
 func exchangeSSHFP(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := makeMsg(domain, dns.TypeSSHFP)
-	return client.Exchange(msg, server)
+	return exchangeMsg(client, domain, server, dns.TypeSSHFP)
 }
 
 func handleSSHFP(client *dns.Client, result *dns.Msg, server string) error {
@@ -445,8 +433,7 @@ func handleSPF(client *dns.Client, result *dns.Msg, server string) error {
 }
 
 func exchangeDHCID(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := makeMsg(domain, dns.TypeDHCID)
-	return client.Exchange(msg, server)
+	return exchangeMsg(client, domain, server, dns.TypeDHCID)
 }
 
 func handleDHCID(client *dns.Client, result *dns.Msg, server string) error {
@@ -461,8 +448,7 @@ func handleDHCID(client *dns.Client, result *dns.Msg, server string) error {
 }
 
 func exchangeHTTPS(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
-	msg := makeMsg(domain, dns.TypeHTTPS)
-	return client.Exchange(msg, server)
+	return exchangeMsg(client, domain, server, dns.TypeHTTPS)
 }
 
 func handleHTTPS(client *dns.Client, result *dns.Msg, server string) error {
@@ -475,7 +461,7 @@ func handleHTTPS(client *dns.Client, result *dns.Msg, server string) error {
 				targetOutput = "<root>"
 			}
 
-			fmt.Printf("%s [pri=%d ttl=%d",
+			fmt.Printf("%s [p=%d ttl=%d",
 				targetOutput,
 				https.Priority,
 				https.Hdr.Ttl)
@@ -836,5 +822,15 @@ func main() {
 		}
 	} else {
 		fmt.Fprintf(os.Stderr, "Type not supported: %s\n", recordType)
+
+		// Output possible record types
+		regPat := fmt.Sprintf("^%s", regexp.QuoteMeta(recordType))
+		re := regexp.MustCompile(regPat)
+
+		for key, _ := range recordMap {
+			if re.MatchString(key) {
+				fmt.Printf("Did you mean '%s'?\n", key)
+			}
+		}
 	}
 }
