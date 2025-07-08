@@ -15,26 +15,26 @@ import (
 	"github.com/miekg/dns"
 )
 
-type ExchangeFunc func(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error)
-type HandlerFunc func(client *dns.Client, result *dns.Msg, server string) error
+type exchangeFunc func(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error)
+type handlerFunc func(client *dns.Client, result *dns.Msg, server string) error
 
-type Record struct {
-	Exchange ExchangeFunc
-	Handler HandlerFunc
-	Alias string
-	Description string
+type record struct {
+	Exchange exchangeFunc
+	Handler handlerFunc
+	Alias *string
+	Desc string
 }
 
-type RTTCategory struct {
+type rttCategory struct {
 	Rating string
-	Description string
+	Desc string
 }
 
-type SSHFPAlgorithm struct {
+type sshfpAlgorithm struct {
 	Name string
 }
 
-type SSHFPType struct {
+type sshfpType struct {
 	Name string
 }
 
@@ -50,6 +50,7 @@ var (
 	recursiveCNAMELookup bool
 	targetServer string
 	arpaLookup bool
+	listRatings bool
 )
 
 func makeMsg(domain string, what uint16) *dns.Msg {
@@ -459,141 +460,89 @@ func handleDHCID(client *dns.Client, result *dns.Msg, server string) error {
 	return nil
 }
 
-var recordMap = map[string]Record {
-	"MX": {
-		Exchange: exchangeMX,
-		Handler: handleMX,
-		Description: "Mail server",
-	},
-	"MAIL": {
-		Exchange: exchangeMX,
-		Handler: handleMX,
-		Description: "Alias to MX",
-	},
-	"A": {
-		Exchange: exchangeA,
-		Handler: handleA,
-		Description: "IPv4 address",
-	},
-	"AAAA": {
-		Exchange: exchangeAAAA,
-		Handler: handleAAAA,
-		Description: "IPv6 address",
-	},
-	"SOA": {
-		Exchange: exchangeSOA,
-		Handler: handleSOA,
-		Description: "Start of authority",
-	},
-	"ORIGIN": {
-		Exchange: exchangeSOA,
-		Handler: handleSOA,
-		Description: "Alias to SOA",
-	},
-	"SRV": {
-		Exchange: exchangeSRV,
-		Handler: handleSRV,
-		Description: "Service",
-	},
-	"SIP": { 
-		Exchange: exchangeSIP,
-		Handler: handleSRV,
-		Alias: "SRV",
-		Description: "Alias to SIP SRV",
-	},
-	"CNAME": {
-		Exchange: exchangeCNAME,
-		Handler: handleCNAME,
-		Description: "Canonical name",
-	},
-	"TXT": {
-		Exchange: exchangeTXT,
-		Handler: handleTXT,
-		Description: "Text",
-	},
-	"DMARC": {
-		Exchange: exchangeDMARC,
-		Handler: handleTXT,
-		Alias: "TXT",
-		Description: "Alias to DMARC TXT",
-	},
-	"NS": {
-		Exchange: exchangeNS,
-		Handler: handleNS,
-		Description: "Name server",
-	},
-	"PTR": {
-		Exchange: exchangePTR,
-		Handler: handlePTR,
-		Description: "Pointer",
-	},
-	"SSHFP": {
-		Exchange: exchangeSSHFP,
-		Handler: handleSSHFP,
-		Description: "SSH fingerprint",
-	},
-	"SPF": {
-		Exchange: exchangeTXT,
-		Handler: handleSPF,
-		Alias: "TXT",
-		Description: "Alias to SPF TXT",
-	},
-	"DHCID": {
-		Exchange: exchangeDHCID,
-		Handler: handleDHCID,
-		Description: "DHCP identifier",
-	
-	},
-	"DC": {
-		Exchange: exchangeDC,
-		Handler: handleSRV,
-		Alias: "SRV",
-		Description: "Domain Controllers for Active Directory domain",
-	},
-	"PDC": {
-		Exchange: exchangePDC,
-		Handler: handleSRV,
-		Alias: "SRV",
-		Description: "Primary Domain Controller (PDC) emulator",
-	},
-	"GC": {
-		Exchange: exchangeGC,
-		Handler: handleSRV,
-		Alias: "SRV",
-		Description: "Global Catalog servers",
-	},
-	"KDC": {
-		Exchange: exchangeKDC,
-		Handler: handleSRV,
-		Alias: "SRV",
-		Description: "Kerberos Key Distribution Centers (KDCs)",
-	},
-	"LDAP": {
-		Exchange: exchangeLDAP,
-		Handler: handleSRV,
-		Alias: "SRV",
-		Description: "LDAP service location",
-	},
-	"LOC": {
-		Exchange: exchangeLOC,
-		Handler: handleLOC,
-		Description: "Geographical location",
-	},
+func exchangeHTTPS(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	msg := makeMsg(domain, dns.TypeHTTPS)
+	return client.Exchange(msg, server)
 }
 
-var sshfpAlgorithms = []SSHFPAlgorithm {
-	{ Name: "Reserved" },
-    	{ Name: "RSA" },
-	{ Name: "DSA" },
-	{ Name: "ECDSA" },
-	{ Name: "Ed25519" },
-	{ Name: "Ed448" },
+func handleHTTPS(client *dns.Client, result *dns.Msg, server string) error {
+	for _, ans := range result.Answer {
+		if https, ok := ans.(*dns.HTTPS); ok {
+			targetOutput := https.Target
+
+			// Change target to pseudonym root
+			if targetOutput == "." {
+				targetOutput = "<root>"
+			}
+
+			fmt.Printf("%s [pri=%d ttl=%d",
+				targetOutput,
+				https.Priority,
+				https.Hdr.Ttl)
+
+			// HTTPS values/parameters
+			var numValues = len(https.Value)
+
+			if numValues > 0 {
+				fmt.Printf(" params=(")
+
+				for _, param := range https.Value {
+					fmt.Printf("%s=%v", param.Key(), param.String())
+				}
+
+				fmt.Printf(")")
+			}
+			
+			fmt.Printf("]\n")
+		}
+	}
+
+	return nil
 }
 
-var sshfpTypes = []SSHFPType {
-	{ Name: "Reserved" },
-	{ Name: "SHA-1" },
-	{ Name: "SHA-256" },
+var srvRecord = "SRV"
+var txtRecord = "TXT"
+var ptrRecord = "PTR"
+
+var recordMap = map[string]record {
+	"MX": { exchangeMX, handleMX, nil, "Mail server" },
+	"MAIL": { exchangeMX, handleMX, nil, "Alias to MX" },
+	"A": { exchangeA, handleA, nil, "IPv4 address" },
+	"AAAA": { exchangeAAAA, handleAAAA, nil, "IPv6 address" },
+	"SOA": { exchangeSOA, handleSOA, nil, "Start of authority" },
+	"ORIGIN": { exchangeSOA, handleSOA, nil, "Alias to SOA" },
+	"SRV": { exchangeSRV, handleSRV, nil, "Service" },
+	"SIP": { exchangeSIP, handleSRV, &srvRecord,"Alias to SIP SRV" },
+	"CNAME": { exchangeCNAME, handleCNAME, nil, "Canonical name" },
+	"TXT": { exchangeTXT, handleTXT, nil, "Text" },
+	"DMARC": { exchangeDMARC, handleTXT, &txtRecord, "Alias to DMARC TXT" },
+	"NS": { exchangeNS, handleNS, nil, "Name server" },
+	"PTR": { exchangePTR, handlePTR, nil, "Pointer" },
+	"SSHFP": { exchangeSSHFP, handleSSHFP, nil, "SSH fingerprint" },
+	"SPF": { exchangeTXT, handleSPF, &txtRecord, "Alias to SPF TXT" },
+	"DHCID": { exchangeDHCID, handleDHCID, nil, "DHCP identifier" },
+	"DC": { exchangeDC, handleSRV, &srvRecord, "Domain Controllers for Active Directory domain" },
+	"PDC": { exchangePDC, handleSRV, &srvRecord, "Primary Domain Controller (PDC) emulator" },
+	"GC": { exchangeGC, handleSRV, &srvRecord, "Global Catalog servers" },
+	"KDC": { exchangeKDC, handleSRV, &srvRecord, "Kerberos Key Distribution Centers (KDCs)" },
+	"LDAP": { exchangeLDAP, handleSRV, &srvRecord, "LDAP service location" },
+	"LOC": { exchangeLOC, handleLOC, nil, "Geographical location" },
+	"HTTPS": { exchangeHTTPS, handleHTTPS, nil, "HTTPS binding" },
+}
+
+var sshfpAlgorithms = []sshfpAlgorithm {
+	{ "Reserved" },
+    	{ "RSA" },
+	{ "DSA" },
+	{ "ECDSA" },
+	{ "Ed25519" },
+	{ "Ed448" },
+}
+
+var sshfpTypes = []sshfpType {
+	{ "Reserved" },
+	{ "SHA-1" },
+	{ "SHA-256" },
 }
 
 func mboxToEmail(mbox string) string {
@@ -622,32 +571,32 @@ func removeLastDot(domain string) string {
 	return domain
 }
 
-func rateRTT(rtt time.Duration) RTTCategory {
+func rateRTT(rtt time.Duration) rttCategory {
 	ms := rtt.Milliseconds()
-	cat := RTTCategory{}
+	cat := rttCategory{}
 
 	switch {
 	case ms < 0:
 		cat.Rating = "invalid"
-		cat.Description = "Negative RTT, check measurement."
+		cat.Desc = "Negative RTT, check measurement."
 	case ms <= 10:
 		cat.Rating = "excellent"
-		cat.Description = "Typically seen with local caching or very efficient resolvers"
+		cat.Desc = "Typically seen with local caching or very efficient resolvers"
 	case ms <= 50:
 		cat.Rating = "very good"
-		cat.Description = "Good performance, minimal impact on page load times"
+		cat.Desc = "Good performance, minimal impact on page load times"
 	case ms <= 100:
 		cat.Rating = "good"
-		cat.Description = "Acceptable for most websites, slight impact on performance"
+		cat.Desc = "Acceptable for most websites, slight impact on performance"
 	case ms <= 200:
 		cat.Rating = "fair"
-		cat.Description = "Noticeable impact on page load times, consider optimization"
+		cat.Desc = "Noticeable impact on page load times, consider optimization"
 	case ms <= 500:
 		cat.Rating = "poor"
-		cat.Description = "Significant impact on user experience, optimization recommended"
+		cat.Desc = "Significant impact on user experience, optimization recommended"
 	default:
 		cat.Rating = "very poor"
-		cat.Description = "Major performance issue, urgent optimization needed"
+		cat.Desc = "Major performance issue, urgent optimization needed"
 	}
 
 	return cat
@@ -665,7 +614,7 @@ func printRecordTypes() {
 	for _, key := range keys {
 		keyOutput := ""
 
-		if recordMap[key].Alias != "" {
+		if recordMap[key].Alias != nil {
 			keyOutput += "*"	
 		}
 	
@@ -673,10 +622,31 @@ func printRecordTypes() {
 
 		fmt.Printf("%8s %s\n",
 			keyOutput,
-			recordMap[key].Description)
+			recordMap[key].Desc)
 	}
 
 	fmt.Printf("\n* = alias\n")
+}
+
+func printRatings() {
+	sampleRTTs := []time.Duration{
+		-1 * time.Millisecond,  // invalid
+		10 * time.Millisecond,  // excellent
+		50 * time.Millisecond,  // very good
+		100 * time.Millisecond, // good
+		200 * time.Millisecond, // fair
+		500 * time.Millisecond, // poor
+		700 * time.Millisecond, // very poor
+	}
+
+	for _, rtt := range sampleRTTs {
+		cat := rateRTT(rtt)
+		
+		fmt.Printf("%4dms%10s - %s\n",
+			rtt.Milliseconds(),
+			cat.Rating,
+			cat.Desc)
+	}
 }
 
 func endsWithInt(s string) bool {
@@ -764,7 +734,8 @@ func init() {
 	flag.BoolVar(&listRecords, "Records", false, "List record types")
 	flag.BoolVar(&recursiveCNAMELookup, "Recursive", false, "Recursive CNAME lookup")
 	flag.StringVar(&targetServer, "Server", "", "Target server")
-	flag.BoolVar(&arpaLookup, "Arpa", false, "in-addr.arpa lookup")
+	flag.BoolVar(&arpaLookup, "Arpa", false, "Reverse lookup")
+	flag.BoolVar(&listRatings, "Ratings", false, "List ratings")
 }
 
 func main() {
@@ -773,7 +744,7 @@ func main() {
 		progname := filepath.Base(os.Args[0])
 		
 		fmt.Fprintf(w, "Usage: %s [-h] " +
-			"<domain> " +
+			"<domain | IP> " +
 			"[record | alias]\n", progname)
 		flag.PrintDefaults()
 	}
@@ -782,6 +753,11 @@ func main() {
 
 	if listRecords {
 		printRecordTypes()
+		os.Exit(255)
+	}
+
+	if listRatings {
+		printRatings()
 		os.Exit(255)
 	}
 
@@ -811,11 +787,11 @@ func main() {
 		server = net.JoinHostPort(config.Servers[0], config.Port)
 	}
 
-	// in-addr.arpa lookup
+	// Reverse lookup
 	if arpaLookup {
 		version := ipVersion(domain)
 		domain, _ = ipToArpa(domain, version)
-		recordType = "PTR"
+		recordType = ptrRecord
 	}
 
 	client := new(dns.Client)
@@ -832,8 +808,8 @@ func main() {
 		numAnswers := len(result.Answer)
 		recordOutput := recordType
 
-		if record.Alias != "" {
-			recordOutput = record.Alias
+		if record.Alias != nil {
+			recordOutput = *record.Alias
 		}
 		
 		fmt.Printf("%s %s\n",
@@ -853,10 +829,8 @@ func main() {
 		// Output records
 		if numAnswers > 0 {
 			fmt.Printf("-\n")
-			
-			herr := record.Handler(client, result, server)
 
-			if herr != nil {
+			if herr := record.Handler(client, result, server); herr != nil {
 				fmt.Fprintf(os.Stderr, "err: %v\n", herr)	
 			}
 		}

@@ -24,3 +24,17 @@ resolv cormier.co dmarc
 ```
 
 Aliases will be formed based on necessity.
+
+## More
+
+List supported records and aliases.
+
+```sh
+resolv -Records
+```
+
+The lesser done reverse lookup.
+
+```sh
+resolv -Arpa 8.8.4.4
+```
