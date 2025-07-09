@@ -39,6 +39,10 @@ type sshfpType struct {
 	Name string
 }
 
+type priorityLabel struct {
+	Name string
+}
+
 const (
 	resolvConfPath = "/etc/resolv.conf"
 	defaultRecordType = "A"
@@ -458,25 +462,68 @@ func handleHTTPS(client *dns.Client, result *dns.Msg, server string) error {
 				targetOutput = "<root>"
 			}
 
-			fmt.Printf("%s [p=%d ttl=%d",
+			// Default to alias mode
+			priority := priorityLabelMap[0].Name
+
+			if https.Priority > 0 {
+				priority = priorityLabelMap[1].Name
+			}
+
+			fmt.Printf("%s [p=%s(%d) ttl=%d]\n\n",
 				targetOutput,
+				priority,
 				https.Priority,
 				https.Hdr.Ttl)
 
-			// HTTPS values/parameters
+			// Values/parameters
 			var numValues = len(https.Value)
 
 			if numValues > 0 {
-				fmt.Printf(" params=(")
-
 				for _, param := range https.Value {
-					fmt.Printf("%s=%v", param.Key(), param.String())
+					fmt.Printf("%11s=%v\n", param.Key(), param.String())
 				}
-
-				fmt.Printf(")")
 			}
-			
-			fmt.Printf("]\n")
+		}
+	}
+
+	return nil
+}
+
+func exchangeSVCB(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	return exchangeMsg(client, domain, server, dns.TypeSVCB)
+}
+
+func handleSVCB(client *dns.Client, result *dns.Msg, server string) error {
+	for _, ans := range result.Answer {
+		if svcb, ok := ans.(*dns.SVCB); ok {
+			targetOutput := svcb.Target
+
+			// Change target to pseudonym root
+			if targetOutput == "." {
+				targetOutput = "<root>"
+			}
+
+			// Default to alias mode
+			priority := priorityLabelMap[0].Name
+
+			if svcb.Priority > 0 {
+				priority = priorityLabelMap[1].Name
+			}
+
+			fmt.Printf("%s [p=%s(%d) ttl=%d]\n\n",
+				targetOutput,
+				priority,
+				svcb.Priority,
+				svcb.Hdr.Ttl)
+
+			// Values/parameters
+			var numValues = len(svcb.Value)
+
+			if numValues > 0 {
+				for _, param := range svcb.Value {
+					fmt.Printf("%11s=%v\n", param.Key(), param.String())
+				}
+			}
 		}
 	}
 
@@ -512,6 +559,7 @@ var recordMap = map[string]record {
 	"LDAP": { exchangeLDAP, handleSRV, &srvRecord, "LDAP service location" },
 	"LOC": { exchangeLOC, handleLOC, nil, "Geographical location" },
 	"HTTPS": { exchangeHTTPS, handleHTTPS, nil, "HTTPS binding" },
+	"SVCB": { exchangeSVCB, handleSVCB, nil, "Service binding"},
 }
 
 var sshfpAlgorithms = []sshfpAlgorithm {
@@ -527,6 +575,11 @@ var sshfpTypes = []sshfpType {
 	{ "Reserved" },
 	{ "SHA-1" },
 	{ "SHA-256" },
+}
+
+var priorityLabelMap = map[int]priorityLabel {
+	0: { "alias" },
+	1: { "service" },
 }
 
 func mboxToEmail(mbox string) string {
