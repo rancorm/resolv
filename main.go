@@ -277,11 +277,8 @@ func handleCNAME(client *dns.Client, result *dns.Msg, server string) error {
 					}
 
 					result = nextResult
+					foundCNAME = true
 				}
-				
-				foundCNAME = true
-				
-				break
 			}
 		}
 
