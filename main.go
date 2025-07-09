@@ -43,6 +43,7 @@ const (
 	resolvConfPath = "/etc/resolv.conf"
 	defaultRecordType = "A"
 	defaultDNSPort = "53"
+	spfPrefix = "vspf1"
 )
 
 var (
@@ -173,12 +174,20 @@ func exchangeMX(client *dns.Client, domain string, server string) (*dns.Msg, tim
 }
 
 func handleMX(client *dns.Client, result *dns.Msg, server string) error {
+	found := false
+
 	for _, ans := range result.Answer {
 		if mx, ok := ans.(*dns.MX); ok {
 			fmt.Printf("%s [pref=%d]\n",
 				removeLastDot(mx.Mx),
 				mx.Preference)
+
+			found = true
 		}
+	}
+
+	if !found {
+		return fmt.Errorf("No mail records found.")
 	}
 
 	return nil
@@ -223,14 +232,14 @@ func exchangeSOA(client *dns.Client, domain string, server string) (*dns.Msg, ti
 func handleSOA(client *dns.Client, result *dns.Msg, server string) error {
 	for _, ans := range result.Answer {
 		if soa, ok := ans.(*dns.SOA); ok {
-			fmt.Printf("%s [ttl=%d ser=%d ref=%d ret=%d min=%d %s]\n",
+			fmt.Printf("%s %s [ser=%d ref=%d ret=%d min=%d ttl=%d]\n",
 				removeLastDot(soa.Ns),
-				soa.Hdr.Ttl,
+				mboxToEmail(soa.Mbox),
 				soa.Serial,
 				soa.Refresh,
 				soa.Retry,
 				soa.Minttl,
-				mboxToEmail(soa.Mbox))
+				soa.Hdr.Ttl)
 		}
 	}
 
@@ -282,6 +291,7 @@ func handleCNAME(client *dns.Client, result *dns.Msg, server string) error {
 			}
 		}
 
+		// Final record lookup
 		if !foundCNAME {
 			msg := makeMsg(current, dns.TypeA)
 			aResult, _, err := client.Exchange(msg, server)
@@ -307,28 +317,18 @@ func handleCNAME(client *dns.Client, result *dns.Msg, server string) error {
 }
 
 func handleFinalRecords(result *dns.Msg) {
-	found := false
-    
 	for _, ans := range result.Answer {
 		switch rr := ans.(type) {
 		case *dns.A:
-			fmt.Printf("%s > %s [ttl=%d]\n",
-				removeLastDot(rr.Hdr.Name),
+			fmt.Printf("%s [ttl=%d]\n",
 				rr.A.String(),
 				rr.Hdr.Ttl)
-			found = true
 		case *dns.AAAA:
-			fmt.Printf("%s > %s [ttl=%d]\n",
-				removeLastDot(rr.Hdr.Name),
+			fmt.Printf("%s [ttl=%d]\n",
 				rr.AAAA.String(),
 				rr.Hdr.Ttl)
-			found = true	
 		}
 	}
-	
-	if !found {
-        	fmt.Println("No A or AAAA records found in the response.")
-    	}
 }
 
 func exchangeTXT(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
@@ -419,7 +419,7 @@ func handleSPF(client *dns.Client, result *dns.Msg, server string) error {
 	}
 	
 	if len(spfRecords) == 0 {
-		fmt.Println("No SPF records found.")
+		return fmt.Errorf("No SPF records found.")
 	} else {
 		for _, record := range spfRecords {
 			fmt.Printf("%s\n", record)
@@ -486,6 +486,7 @@ func handleHTTPS(client *dns.Client, result *dns.Msg, server string) error {
 var srvRecord = "SRV"
 var txtRecord = "TXT"
 var ptrRecord = "PTR"
+var soaRecord = "SOA"
 
 var recordMap = map[string]record {
 	"MX": { exchangeMX, handleMX, nil, "Mail server" },
@@ -493,7 +494,7 @@ var recordMap = map[string]record {
 	"A": { exchangeA, handleA, nil, "IPv4 address" },
 	"AAAA": { exchangeAAAA, handleAAAA, nil, "IPv6 address" },
 	"SOA": { exchangeSOA, handleSOA, nil, "Start of authority" },
-	"ORIGIN": { exchangeSOA, handleSOA, nil, "Alias to SOA" },
+	"ORIGIN": { exchangeSOA, handleSOA, &soaRecord, "Alias to SOA" },
 	"SRV": { exchangeSRV, handleSRV, nil, "Service" },
 	"SIP": { exchangeSIP, handleSRV, &srvRecord,"Alias to SIP SRV" },
 	"CNAME": { exchangeCNAME, handleCNAME, nil, "Canonical name" },
@@ -588,6 +589,7 @@ func rateRTT(rtt time.Duration) rttCategory {
 func printRecordTypes() {
 	keys := make([]string, 0, len(recordMap))
 
+	// Records & aliases
 	for key := range recordMap {
 		keys = append(keys, key)
 	}
