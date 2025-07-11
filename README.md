@@ -7,7 +7,7 @@ Modern DNS lookup utility
 Just pass the `domain` you want to lookup and you're in business.
 
 ```
-Usage: resolv [-h] <domain | IP> [record | alias]
+Usage: resolv [-h -help] [-arpa] [-records] [-ratings] [-server <addr>] <domain> [record | alias]
 ```
 
 Lookup mail (MX) records.
@@ -30,11 +30,11 @@ Aliases will be formed based on necessity.
 List supported records and aliases.
 
 ```sh
-resolv -Records
+resolv -records
 ```
 
 The lesser done reverse lookup.
 
 ```sh
-resolv -Arpa 8.8.4.4
+resolv -arpa 8.8.4.4
 ```

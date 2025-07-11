@@ -57,6 +57,7 @@ var (
 	targetServer string
 	arpaLookup bool
 	listRatings bool
+	showHelp bool
 )
 
 func makeMsg(domain string, what uint16) *dns.Msg {
@@ -534,10 +535,11 @@ var srvRecord = "SRV"
 var txtRecord = "TXT"
 var ptrRecord = "PTR"
 var soaRecord = "SOA"
+var mxRecord = "MX"
 
 var recordMap = map[string]record {
 	"MX": { exchangeMX, handleMX, nil, "Mail server" },
-	"MAIL": { exchangeMX, handleMX, nil, "Alias to MX" },
+	"MAIL": { exchangeMX, handleMX, &mxRecord, "Alias to MX" },
 	"A": { exchangeA, handleA, nil, "IPv4 address" },
 	"AAAA": { exchangeAAAA, handleAAAA, nil, "IPv6 address" },
 	"SOA": { exchangeSOA, handleSOA, nil, "Start of authority" },
@@ -768,26 +770,42 @@ func ipVersion(s string) int {
 }
 
 func init() {
-	flag.BoolVar(&recursionLookup, "Recursion", true, "Recursion lookup")
-	flag.BoolVar(&listRecords, "Records", false, "List record types")
-	flag.BoolVar(&recursiveCNAMELookup, "Recursive", false, "Recursive CNAME lookup")
-	flag.StringVar(&targetServer, "Server", "", "Target server")
-	flag.BoolVar(&arpaLookup, "Arpa", false, "Reverse lookup")
-	flag.BoolVar(&listRatings, "Ratings", false, "List ratings")
+	const previousLine = "\x1B[1F"
+
+	flag.BoolVar(&recursionLookup, "recursion", true, "Recursion lookup")
+	flag.BoolVar(&listRecords, "records", false, "List record types")
+	flag.BoolVar(&recursiveCNAMELookup, "recursive", false, "Recursive CNAME lookup")
+	flag.StringVar(&targetServer, "server", "", "Target server")
+	flag.StringVar(&targetServer, "s", "", previousLine)
+	flag.BoolVar(&arpaLookup, "arpa", false, "Reverse lookup")
+	flag.BoolVar(&listRatings, "ratings", false, "List ratings")
+	flag.BoolVar(&showHelp, "help", false, "This help menu")
+	flag.BoolVar(&showHelp, "h", false, "")
 }
 
 func main() {
 	flag.Usage = func() {
 		w := flag.CommandLine.Output()
 		progname := filepath.Base(os.Args[0])
-		
-		fmt.Fprintf(w, "Usage: %s [-h] " +
-			"<domain | IP> " +
+
+		fmt.Fprintf(w, "Usage: %s [-h -help] " +
+			"[-arpa] [-records] [-ratings] " +
+			"[-server <addr>] " +
+			"<domain> " +
 			"[record | alias]\n", progname)
-		flag.PrintDefaults()
 	}
 
 	flag.Parse()
+	
+	if flag.NArg() < 1 {
+		flag.Usage()
+
+		if showHelp {
+			flag.PrintDefaults()
+		}
+		
+		os.Exit(255)
+	}
 
 	if listRecords {
 		printRecordTypes()
@@ -796,11 +814,6 @@ func main() {
 
 	if listRatings {
 		printRatings()
-		os.Exit(255)
-	}
-
-	if flag.NArg() < 1 {
-		flag.Usage()
 		os.Exit(255)
 	}
 
