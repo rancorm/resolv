@@ -101,6 +101,18 @@ func exchangeSIP(client *dns.Client, domain string, server string) (*dns.Msg, ti
 	return exchangeMsg(client, "_sip._tcp." + domain, server, dns.TypeSRV)
 }
 
+func exchangeSIPTLS(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	return exchangeMsg(client, "_sip._tls." + domain, server, dns.TypeSRV)
+}
+
+func exchangeSIPS(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	return exchangeMsg(client, "_sips._tcp." + domain, server, dns.TypeSRV)
+}
+
+func exchangeSIPSTLS(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	return exchangeMsg(client, "_sips._tls." + domain, server, dns.TypeSRV)
+}
+
 func exchangeLOC(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
 	return exchangeMsg(client, domain, server, dns.TypeLOC)
 }
@@ -449,6 +461,36 @@ func handleDHCID(client *dns.Client, result *dns.Msg, server string) error {
 	return nil
 }
 
+func exchangeNAPTR(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	return exchangeMsg(client, domain, server, dns.TypeNAPTR)
+}
+
+func handleNAPTR(client *dns.Client, result *dns.Msg, server string) error {
+	found := false
+
+	for _, ans := range result.Answer {
+		if naptr, ok := ans.(*dns.NAPTR); ok {
+			fmt.Printf(
+				"%s [order=%d pref=%d flags=%s serv=%s regexp=%s ttl=%d]\n",
+				naptr.Replacement,
+				naptr.Order,
+				naptr.Preference,
+				naptr.Flags,
+				naptr.Service,
+				naptr.Regexp,
+				naptr.Hdr.Ttl)
+
+				found = true
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("No NAPTR records found")
+	}
+    
+	return nil
+}
+
 func exchangeHTTPS(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
 	return exchangeMsg(client, domain, server, dns.TypeHTTPS)
 }
@@ -546,6 +588,9 @@ var recordMap = map[string]record {
 	"ORIGIN": { exchangeSOA, handleSOA, &soaRecord, "Alias to SOA" },
 	"SRV": { exchangeSRV, handleSRV, nil, "Service" },
 	"SIP": { exchangeSIP, handleSRV, &srvRecord,"Alias to SIP SRV" },
+	"SIP-TLS": { exchangeSIPTLS, handleSRV, &srvRecord, "Alias to SIP TLS SRV" },
+	"SIPS": { exchangeSIPS, handleSRV, &srvRecord, "Alias to SIPS SRV" },
+	"SIPS-TLS": { exchangeSIPSTLS, handleSRV, &srvRecord, "Alias to SIPS TLS SRV" },
 	"CNAME": { exchangeCNAME, handleCNAME, nil, "Canonical name" },
 	"TXT": { exchangeTXT, handleTXT, nil, "Text" },
 	"DMARC": { exchangeDMARC, handleTXT, &txtRecord, "Alias to DMARC TXT" },
@@ -561,7 +606,8 @@ var recordMap = map[string]record {
 	"LDAP": { exchangeLDAP, handleSRV, &srvRecord, "LDAP service location" },
 	"LOC": { exchangeLOC, handleLOC, nil, "Geographical location" },
 	"HTTPS": { exchangeHTTPS, handleHTTPS, nil, "HTTPS binding" },
-	"SVCB": { exchangeSVCB, handleSVCB, nil, "Service binding"},
+	"SVCB": { exchangeSVCB, handleSVCB, nil, "Service binding" },
+	"NAPTR": { exchangeNAPTR, handleNAPTR, nil, "Name authority pointer" },
 }
 
 var sshfpAlgorithms = []sshfpAlgorithm {
@@ -660,7 +706,7 @@ func printRecordTypes() {
 	
 		keyOutput += key
 
-		fmt.Printf("%8s %s\n",
+		fmt.Printf("%10s %s\n",
 			keyOutput,
 			recordMap[key].Desc)
 	}
@@ -790,13 +836,23 @@ func main() {
 
 		fmt.Fprintf(w, "Usage: %s [-h -help] " +
 			"[-arpa] [-records] [-ratings] " +
-			"[-server <addr>] " +
+			"[-s -server <addr>] " +
 			"<domain> " +
 			"[record | alias]\n", progname)
 	}
 
 	flag.Parse()
 	
+	if listRecords {
+		printRecordTypes()
+		os.Exit(255)
+	}
+
+	if listRatings {
+		printRatings()
+		os.Exit(255)
+	}
+
 	if flag.NArg() < 1 {
 		flag.Usage()
 
@@ -807,15 +863,6 @@ func main() {
 		os.Exit(255)
 	}
 
-	if listRecords {
-		printRecordTypes()
-		os.Exit(255)
-	}
-
-	if listRatings {
-		printRatings()
-		os.Exit(255)
-	}
 
 	domain := flag.Arg(0)
 	recordType := defaultRecordType
@@ -878,12 +925,10 @@ func main() {
 		}
 
 		// Output records
-		if numAnswers > 0 {
-			fmt.Printf("-\n")
+		fmt.Printf("-\n")
 
-			if herr := record.Handler(client, result, server); herr != nil {
-				fmt.Fprintf(os.Stderr, "err: %v\n", herr)	
-			}
+		if herr := record.Handler(client, result, server); herr != nil {
+			fmt.Fprintf(os.Stderr, "err: %v\n", herr)	
 		}
 	} else {
 		fmt.Fprintf(os.Stderr, "Type not supported: %s\n", recordType)
