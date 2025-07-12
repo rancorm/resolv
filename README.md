@@ -2,12 +2,22 @@
 
 Modern DNS lookup utility
 
+## Build
+
+To build the binary.
+
+```sh
+go build
+```
+
 ## Usage
 
-Just pass the `domain` you want to lookup and you're in business.
+Pass the `domain` you want to lookup and you're in business. For a specific `record` type
+include it after the domain. Common records are MX, SRV, SOA, A (default), AAAA, and 
+many [more](https://en.wikipedia.org/wiki/List_of_DNS_record_types).
 
 ```
-Usage: resolv [-h -help] [-arpa] [-records] [-ratings] [-server <addr>] <domain> [record | alias]
+Usage: resolv [-h -help] [-arpa] [-records] [-ratings] [-s -server <addr>] <domain> [record | alias]
 ```
 
 Lookup mail (MX) records.
