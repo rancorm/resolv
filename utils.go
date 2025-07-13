@@ -72,7 +72,7 @@ func rateRTT(rtt time.Duration) rttCategory {
 	case ms < 0:
 		cat.Rating = "invalid"
 		cat.Desc = "Negative RTT, check measurement."
-		cat.Color = color.RGB(255, 255, 255)
+		cat.Color = color.RGB(0, 0, 0)
 	case ms <= 10:
 		cat.Rating = "excellent"
 		cat.Desc = "Typically seen with local caching or very efficient resolvers"
@@ -84,7 +84,7 @@ func rateRTT(rtt time.Duration) rttCategory {
 	case ms <= 100:
 		cat.Rating = "good"
 		cat.Desc = "Acceptable for most websites, slight impact on performance"
-		cat.Color = color.RGB(255, 255, 0)
+		cat.Color = color.RGB(0, 185, 0)
 	case ms <= 200:
 		cat.Rating = "fair"
 		cat.Desc = "Noticeable impact on page load times, consider optimization"
@@ -92,7 +92,7 @@ func rateRTT(rtt time.Duration) rttCategory {
 	case ms <= 500:
 		cat.Rating = "poor"
 		cat.Desc = "Significant impact on user experience, optimization recommended"
-		cat.Color = color.RGB(240, 0, 0)
+		cat.Color = color.RGB(200, 0, 0)
 	default:
 		cat.Rating = "very poor"
 		cat.Desc = "Major performance issue, urgent optimization needed"
@@ -116,10 +116,9 @@ func printRatings() {
 	for _, rtt := range sampleRTTs {
 		cat := rateRTT(rtt)
 		
-		fmt.Printf("%4dms%10s - %s\n",
-			rtt.Milliseconds(),
-			cat.Rating,
-			cat.Desc)
+		fmt.Printf("%4dms", rtt.Milliseconds())
+		colorPrintf(cat.Color, "%10s", cat.Rating)	
+		fmt.Printf(" %s\n", cat.Desc)
 	}
 }
 
