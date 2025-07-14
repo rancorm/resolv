@@ -17,6 +17,7 @@ const (
 	defaultRecordType = "A"
 	defaultDNSPort = "53"
 	spfPrefix = "vspf1"
+ 	unknown = "Unknown"
 )
 
 var (

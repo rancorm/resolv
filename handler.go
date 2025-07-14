@@ -364,9 +364,29 @@ func exchangeSSHFP(client *dns.Client, domain string, server string) (*dns.Msg, 
 func handleSSHFP(client *dns.Client, result *dns.Msg, server string) error {
 	for _, ans := range result.Answer {
 		if sshfp, ok := ans.(*dns.SSHFP); ok {
+			alg := ""
+			typ := ""
+
+			// Check for SSHFP algorithm and type labels
+			if int(sshfp.Algorithm) < len(sshfpAlgorithms) {
+				alg = sshfpAlgorithms[sshfp.Algorithm].Name
+			} else {
+				alg = fmt.Sprintf("%s(%d)",
+					unknown,
+					sshfp.Algorithm)
+			}
+
+			if int(sshfp.Type) < len(sshfpTypes) {
+				typ = sshfpTypes[sshfp.Type].Name
+			} else {
+				typ = fmt.Sprintf("%s(%d)",
+					unknown,
+					sshfp.Type)
+			}
+
 			fmt.Printf("%s %s %s [ttl=%d]\n",
-				sshfpAlgorithms[sshfp.Algorithm],
-				sshfpTypes[sshfp.Type],
+				alg,
+				typ,
 				sshfp.FingerPrint,
 				sshfp.Hdr.Ttl)
 		}
