@@ -35,6 +35,28 @@ resolv cormier.co dmarc
 
 Aliases will be formed based on necessity.
 
+[Root servers](https://en.wikipedia.org/wiki/Root_name_server) lookup.
+
+```sh
+resolv . ns
+NS .
+code=0 num=13 rtt=20ms [very good]
+-
+h.root-servers.net [ttl=2600]
+i.root-servers.net [ttl=2600]
+j.root-servers.net [ttl=2600]
+k.root-servers.net [ttl=2600]
+l.root-servers.net [ttl=2600]
+m.root-servers.net [ttl=2600]
+a.root-servers.net [ttl=2600]
+b.root-servers.net [ttl=2600]
+c.root-servers.net [ttl=2600]
+d.root-servers.net [ttl=2600]
+e.root-servers.net [ttl=2600]
+f.root-servers.net [ttl=2600]
+g.root-servers.net [ttl=2600]
+```
+
 ## More
 
 List supported records and aliases.

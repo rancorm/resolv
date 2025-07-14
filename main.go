@@ -1,14 +1,15 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"regexp"
 	"net"
 	"os"
 	"path/filepath"
-	"flag"
+	"regexp"
 	"strings"
 
+	"github.com/fatih/color"
 	"github.com/miekg/dns"
 )
 
@@ -35,6 +36,7 @@ var txtRecord = "TXT"
 var ptrRecord = "PTR"
 var soaRecord = "SOA"
 var mxRecord = "MX"
+var serColor = color.RGB(255, 160, 0)
 
 var recordMap = map[string]record {
 	"MX": { exchangeMX, handleMX, nil, "Mail server" },

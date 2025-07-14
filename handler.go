@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
-	"time"
-	"strings"
 	"math"
+	"strings"
+	"time"
 
 	"github.com/miekg/dns"
 )
@@ -205,10 +205,13 @@ func exchangeSOA(client *dns.Client, domain string, server string) (*dns.Msg, ti
 func handleSOA(client *dns.Client, result *dns.Msg, server string) error {
 	for _, ans := range result.Answer {
 		if soa, ok := ans.(*dns.SOA); ok {
-			fmt.Printf("%s %s [ser=%d ref=%d ret=%d min=%d ttl=%d]\n",
+			fmt.Printf("%s %s [ser=",
 				removeLastDot(soa.Ns),
-				mboxToEmail(soa.Mbox),
-				soa.Serial,
+				mboxToEmail(soa.Mbox))
+
+			colorPrintf(serColor, "%d", soa.Serial)
+
+			fmt.Printf(" ref=%d ret=%d min=%d ttl=%d]\n",
 				soa.Refresh,
 				soa.Retry,
 				soa.Minttl,
