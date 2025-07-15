@@ -250,10 +250,9 @@ func handleCNAME(client *dns.Client, result *dns.Msg, server string) error {
 					removeLastDot(cname.Hdr.Name),
 					removeLastDot(cname.Target),
 					cname.Hdr.Ttl)
-			
+				
+				// CNAMEs all the way down
 				if recursiveCNAMELookup {
-					current = cname.Target
-
 					msg := makeMsg(current, dns.TypeCNAME)
 					nextResult, _, err := client.Exchange(msg, server)
 
@@ -263,7 +262,10 @@ func handleCNAME(client *dns.Client, result *dns.Msg, server string) error {
 
 					result = nextResult
 					foundCNAME = true
-				}
+				} 
+			
+				// CNAME target will be next record lookup
+				current = cname.Target
 			}
 		}
 

@@ -10,6 +10,12 @@ To build the binary.
 go build
 ```
 
+Build *tiny* binary.
+
+```sh
+make tiny
+```
+
 ## Usage
 
 Pass the `domain` you want to lookup and you're in business. For a specific `record` type
@@ -39,6 +45,11 @@ Aliases will be formed based on necessity.
 
 ```sh
 resolv . ns
+```
+
+The glorious root name servers.
+
+```sh
 NS .
 code=0 num=13 rtt=20ms [very good]
 -
