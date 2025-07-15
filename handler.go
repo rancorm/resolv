@@ -562,3 +562,21 @@ func handleTLSA(client *dns.Client, result *dns.Msg, server string) error {
 
 	return nil
 }
+
+func exchangeURI(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	return exchangeMsg(client, domain, server, dns.TypeURI)
+}
+
+func handleURI(client *dns.Client, result *dns.Msg, server string) error {
+	for _, ans := range result.Answer {
+		if uri, ok := ans.(*dns.URI); ok {
+			fmt.Printf("%s [pri=%d w=%d ttl=%d]\n",
+				uri.Target,
+				uri.Priority,
+				uri.Weight,
+				uri.Hdr.Ttl)
+		}
+	}
+
+	return nil
+}

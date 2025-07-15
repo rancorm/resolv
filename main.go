@@ -70,6 +70,7 @@ var recordMap = map[string]record {
 	"SVCB": { exchangeSVCB, handleSVCB, nil, "Service binding" },
 	"NAPTR": { exchangeNAPTR, handleNAPTR, nil, "Name authority pointer" },
 	"TLSA": { exchangeTLSA, handleTLSA, nil, "DANE TLS authentication" },
+	"URI": { exchangeURI, handleURI, nil, "Uniform Resource Identifier" },
 }
 
 var sshfpAlgorithms = []string {
@@ -186,6 +187,7 @@ func main() {
 		cat := rateRTT(rtt)
 		numAnswers := len(result.Answer)
 		recordOutput := recordType
+		flatCNAME := false
 
 		if record.Alias != nil {
 			recordOutput = *record.Alias
@@ -197,6 +199,7 @@ func main() {
 		numAnswers == 0 && 
 		recordType == "CNAME" {
 			recordOutput += " (flatten)"
+			flatCNAME = true
 		}
 
 		fmt.Printf("%s %s\n",
@@ -214,7 +217,8 @@ func main() {
 			os.Exit(result.Rcode)
 		}
 
-		if numAnswers > 0 || recordType == "CNAME" {
+		// Output divider when appropriate
+		if numAnswers > 0 || flatCNAME {
 			fmt.Printf("-\n")
 		}
 
