@@ -19,6 +19,7 @@ const (
 	defaultDNSPort = "53"
 	spfPrefix = "vspf1"
  	unknown = "Unknown"
+	cnameDepth = 15
 )
 
 var (
@@ -36,7 +37,7 @@ var txtRecord = "TXT"
 var ptrRecord = "PTR"
 var soaRecord = "SOA"
 var mxRecord = "MX"
-var serColor = color.RGB(255, 160, 0)
+var organeColor = color.RGB(255, 160, 0)
 
 var recordMap = map[string]record {
 	"MX": { exchangeMX, handleMX, nil, "Mail server" },
@@ -68,6 +69,7 @@ var recordMap = map[string]record {
 	"HTTPS": { exchangeHTTPS, handleHTTPS, nil, "HTTPS binding" },
 	"SVCB": { exchangeSVCB, handleSVCB, nil, "Service binding" },
 	"NAPTR": { exchangeNAPTR, handleNAPTR, nil, "Name authority pointer" },
+	"TLSA": { exchangeTLSA, handleTLSA, nil, "DANE TLS authentication" },
 }
 
 var sshfpAlgorithms = []sshfpAlgorithm {
@@ -174,7 +176,6 @@ func main() {
 		fmt.Printf("%s %s\n",
 			recordOutput,
 			domain)
-		
 		fmt.Printf("code=%d num=%d rtt=%dms [",
 			result.Rcode,
 			numAnswers,
@@ -186,10 +187,12 @@ func main() {
 		if result.Rcode != dns.RcodeSuccess {
 			os.Exit(result.Rcode)
 		}
+		
+		if numAnswers > 0 {
+			fmt.Printf("-\n")
+		}
 
-		// Output records
-		fmt.Printf("-\n")
-
+		// Handle record
 		if herr := record.Handler(client, result, server); herr != nil {
 			fmt.Fprintf(os.Stderr, "err: %v\n", herr)	
 		}

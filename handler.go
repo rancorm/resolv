@@ -209,7 +209,7 @@ func handleSOA(client *dns.Client, result *dns.Msg, server string) error {
 				removeLastDot(soa.Ns),
 				mboxToEmail(soa.Mbox))
 
-			colorPrintf(serColor, "%d", soa.Serial)
+			colorPrintf(organeColor, "%d", soa.Serial)
 
 			fmt.Printf(" ref=%d ret=%d min=%d ttl=%d]\n",
 				soa.Refresh,
@@ -548,6 +548,27 @@ func handleSVCB(client *dns.Client, result *dns.Msg, server string) error {
 					fmt.Printf("%11s=%v\n", param.Key(), param.String())
 				}
 			}
+		}
+	}
+
+	return nil
+}
+
+func exchangeTLSA(client *dns.Client, domain string, server string) (*dns.Msg, time.Duration, error) {
+	return exchangeMsg(client, domain, server, dns.TypeTLSA)
+}
+
+func handleTLSA(client *dns.Client, result *dns.Msg, server string) error {
+	for _, ans := range result.Answer {
+		if tsla, ok := ans.(*dns.TLSA); ok {
+			fmt.Printf("%s [u=%d sel=%d t=%d cert=",
+				removeLastDot(tsla.Hdr.Name),
+				tsla.Usage,
+				tsla.Selector,
+				tsla.MatchingType)
+			colorPrintf(organeColor, "%s", tsla.Certificate)
+
+			fmt.Printf("]\n")
 		}
 	}
 
