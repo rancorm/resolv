@@ -235,8 +235,8 @@ func handleCNAME(client *dns.Client, result *dns.Msg, server string) error {
 	}
 
 	current = result.Question[0].Name
-
-	for range [15]int{} {
+	
+	for range [cnameDepth]int{} {
 		if visited[current] {
 			return fmt.Errorf("CNAME loop detected at %s", removeLastDot(current))
 		}
@@ -277,7 +277,7 @@ func handleCNAME(client *dns.Client, result *dns.Msg, server string) error {
 			if err != nil {
 				return err
 			}
-			
+	
 			handleFinalRecords(aResult)
 
 			msg.SetQuestion(current, dns.TypeAAAA)
@@ -372,10 +372,10 @@ func handleSSHFP(client *dns.Client, result *dns.Msg, server string) error {
 			alg := getLabel(sshfpAlgorithms, int(sshfp.Algorithm))
 			typ := getLabel(sshfpTypes, int(sshfp.Type))
 
-			fmt.Printf("%s %s %s [ttl=%d]\n",
+			fmt.Printf("%s %8s %8s [ttl=%d]\n",
+				sshfp.FingerPrint,
 				alg,
 				typ,
-				sshfp.FingerPrint,
 				sshfp.Hdr.Ttl)
 		}
 	}

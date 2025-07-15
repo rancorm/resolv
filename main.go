@@ -190,7 +190,15 @@ func main() {
 		if record.Alias != nil {
 			recordOutput = *record.Alias
 		}
-		
+
+		// Add flatten to CNAME success lookups with
+		// no answers
+		if result.Rcode == dns.RcodeSuccess && 
+		numAnswers == 0 && 
+		recordType == "CNAME" {
+			recordOutput += " (flatten)"
+		}
+
 		fmt.Printf("%s %s\n",
 			recordOutput,
 			domain)
@@ -205,8 +213,8 @@ func main() {
 		if result.Rcode != dns.RcodeSuccess {
 			os.Exit(result.Rcode)
 		}
-		
-		if numAnswers > 0 {
+
+		if numAnswers > 0 || recordType == "CNAME" {
 			fmt.Printf("-\n")
 		}
 

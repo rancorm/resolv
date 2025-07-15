@@ -16,7 +16,3 @@ type rttCategory struct {
 	Desc string
 	Color *color.Color
 }
-
-type label struct {
-	Name string
-}
