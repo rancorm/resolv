@@ -17,15 +17,6 @@ type rttCategory struct {
 	Color *color.Color
 }
 
-type sshfpAlgorithm struct {
+type label struct {
 	Name string
 }
-
-type sshfpType struct {
-	Name string
-}
-
-type priorityLabel struct {
-	Name string
-}
-

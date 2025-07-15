@@ -369,25 +369,8 @@ func exchangeSSHFP(client *dns.Client, domain string, server string) (*dns.Msg, 
 func handleSSHFP(client *dns.Client, result *dns.Msg, server string) error {
 	for _, ans := range result.Answer {
 		if sshfp, ok := ans.(*dns.SSHFP); ok {
-			alg := ""
-			typ := ""
-
-			// Check for SSHFP algorithm and type labels
-			if int(sshfp.Algorithm) < len(sshfpAlgorithms) {
-				alg = sshfpAlgorithms[sshfp.Algorithm].Name
-			} else {
-				alg = fmt.Sprintf("%s(%d)",
-					unknown,
-					sshfp.Algorithm)
-			}
-
-			if int(sshfp.Type) < len(sshfpTypes) {
-				typ = sshfpTypes[sshfp.Type].Name
-			} else {
-				typ = fmt.Sprintf("%s(%d)",
-					unknown,
-					sshfp.Type)
-			}
+			alg := getLabel(sshfpAlgorithms, int(sshfp.Algorithm))
+			typ := getLabel(sshfpTypes, int(sshfp.Type))
 
 			fmt.Printf("%s %s %s [ttl=%d]\n",
 				alg,
@@ -487,10 +470,10 @@ func handleHTTPS(client *dns.Client, result *dns.Msg, server string) error {
 			}
 
 			// Default to alias mode
-			priority := priorityLabelMap[0].Name
+			priority := priorityLabels[0]
 
 			if https.Priority > 0 {
-				priority = priorityLabelMap[1].Name
+				priority = priorityLabels[1]
 			}
 
 			fmt.Printf("%s [p=%s(%d) ttl=%d]\n\n",
@@ -528,10 +511,10 @@ func handleSVCB(client *dns.Client, result *dns.Msg, server string) error {
 			}
 
 			// Default to alias mode
-			priority := priorityLabelMap[0].Name
+			priority := priorityLabels[0]
 
 			if svcb.Priority > 0 {
-				priority = priorityLabelMap[1].Name
+				priority = priorityLabels[1]
 			}
 
 			fmt.Printf("%s [p=%s(%d) ttl=%d]\n\n",
@@ -560,13 +543,18 @@ func exchangeTLSA(client *dns.Client, domain string, server string) (*dns.Msg, t
 
 func handleTLSA(client *dns.Client, result *dns.Msg, server string) error {
 	for _, ans := range result.Answer {
-		if tsla, ok := ans.(*dns.TLSA); ok {
-			fmt.Printf("%s [u=%d sel=%d t=%d cert=",
-				removeLastDot(tsla.Hdr.Name),
-				tsla.Usage,
-				tsla.Selector,
-				tsla.MatchingType)
-			colorPrintf(organeColor, "%s", tsla.Certificate)
+		if tlsa, ok := ans.(*dns.TLSA); ok {
+			usage := getLabel(tlsaUsage, int(tlsa.Usage))
+			sel := getLabel(tlsaSel, int(tlsa.Selector))
+			typ := getLabel(tlsaType, int(tlsa.MatchingType))
+
+			fmt.Printf("%s [u=%s sel=%s t=%s cert=",
+				removeLastDot(tlsa.Hdr.Name),
+				usage,
+				sel,
+				typ)
+
+			colorPrintf(organeColor, "%s", tlsa.Certificate)
 
 			fmt.Printf("]\n")
 		}

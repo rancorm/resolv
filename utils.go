@@ -205,3 +205,11 @@ func ipVersion(s string) int {
 func colorPrintf(c *color.Color, format string, a ...any) {
 	c.Printf(format, a...)
 }
+
+func getLabel(labels []string, index int) string {
+	if index >= 0 && index < len(labels) {
+		return labels[index]
+	}
+
+	return strconv.Itoa(index)
+}

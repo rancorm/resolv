@@ -72,24 +72,42 @@ var recordMap = map[string]record {
 	"TLSA": { exchangeTLSA, handleTLSA, nil, "DANE TLS authentication" },
 }
 
-var sshfpAlgorithms = []sshfpAlgorithm {
-	{ "Reserved" },
-    	{ "RSA" },
-	{ "DSA" },
-	{ "ECDSA" },
-	{ "Ed25519" },
-	{ "Ed448" },
+var sshfpAlgorithms = []string {
+	"Reserved",
+    	"RSA",
+	"DSA",
+	"ECDSA",
+	"Ed25519",
+	"Ed448",
 }
 
-var sshfpTypes = []sshfpType {
-	{ "Reserved" },
-	{ "SHA-1" },
-	{ "SHA-256" },
+var sshfpTypes = []string {
+	"Reserved",
+	"SHA-1",
+	"SHA-256",
 }
 
-var priorityLabelMap = map[int]priorityLabel {
-	0: { "alias" },
-	1: { "service" },
+var priorityLabels = []string {
+	"alias",
+	"service",
+}
+
+var tlsaUsage = []string {
+	"PKIX-TA",
+	"PKIX-EE",
+	"DANE-TA",
+	"DANE-EE",
+}
+
+var tlsaSel = []string {
+	"Cert",
+	"SPKI",
+}
+
+var tlsaType = []string {
+	"Full",
+	"SHA-256",
+	"SHA-512",
 }
 
 func main() {
